@@ -1,0 +1,665 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>家族スケジュール管理</title>
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        :root { --primary: #1976D2; --bg: #F5F7FA; --border: #E0E0E0; --text: #212121; --text2: #757575; }
+        body { font-family: 'Meiryo', 'Yu Gothic', sans-serif; background: var(--bg); color: var(--text); }
+        .header { background: var(--primary); color: white; padding: 12px 20px; display: flex; align-items: center; justify-content: space-between; position: sticky; top: 0; z-index: 100; box-shadow: 0 2px 8px rgba(0,0,0,0.2); }
+        .header h1 { font-size: 18px; font-weight: 700; }
+        .btn-white { background: white; color: var(--primary); border: none; padding: 8px 16px; border-radius: 20px; font-size: 14px; font-weight: 700; cursor: pointer; }
+        .btn-out { background: rgba(255,255,255,0.25); color: white; border: none; padding: 8px 16px; border-radius: 20px; font-size: 14px; font-weight: 700; cursor: pointer; display: none; }
+        .nav-tabs { display: flex; background: white; border-bottom: 1px solid var(--border); position: sticky; top: 52px; z-index: 99; }
+        .nav-tab { flex: 1; padding: 12px 4px; text-align: center; font-size: 12px; color: var(--text2); cursor: pointer; border-bottom: 3px solid transparent; }
+        .nav-tab.active { color: var(--primary); border-bottom-color: var(--primary); font-weight: 700; }
+        .main { max-width: 900px; margin: 0 auto; padding: 12px; }
+        .card { background: white; border-radius: 10px; box-shadow: 0 1px 4px rgba(0,0,0,0.08); padding: 16px; margin-bottom: 12px; }
+        .member-legend { display: flex; gap: 8px; flex-wrap: wrap; }
+        .legend-item { display: flex; align-items: center; gap: 5px; font-size: 12px; }
+        .dot { width: 12px; height: 12px; border-radius: 50%; flex-shrink: 0; }
+        .cal-header { display: flex; align-items: center; justify-content: space-between; }
+        .cal-nav { background: none; border: 1px solid var(--border); width: 34px; height: 34px; border-radius: 50%; cursor: pointer; font-size: 18px; }
+        .cal-title { font-size: 18px; font-weight: 700; }
+        .cal-grid { background: white; border-radius: 10px; box-shadow: 0 1px 4px rgba(0,0,0,0.08); overflow: hidden; margin-top: 10px; }
+        .cal-wdays { display: grid; grid-template-columns: repeat(7,1fr); background: var(--primary); color: white; }
+        .cal-wdays div { text-align: center; padding: 8px; font-size: 12px; font-weight: 600; }
+        .cal-days { display: grid; grid-template-columns: repeat(7,1fr); }
+        .cal-day { min-height: 72px; border-right: 1px solid var(--border); border-bottom: 1px solid var(--border); padding: 4px; cursor: pointer; }
+        .cal-day:nth-child(7n) { border-right: none; }
+        .cal-day:hover { background: #EEF4FF; }
+        .cal-day.other { opacity: 0.4; }
+        .cal-day.today .dn { background: var(--primary); color: white; border-radius: 50%; }
+        .cal-day.sun .dn { color: #F44336; }
+        .cal-day.sat .dn { color: #1976D2; }
+        .dn { width: 26px; height: 26px; display: flex; align-items: center; justify-content: center; font-size: 12px; font-weight: 500; margin-bottom: 2px; }
+        .chip { font-size: 9px; padding: 1px 5px; border-radius: 8px; margin-bottom: 2px; color: white; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; cursor: pointer; }
+        .event-card { border-left: 4px solid #ccc; padding: 10px 14px; margin-bottom: 10px; background: var(--bg); border-radius: 0 8px 8px 0; }
+        .event-card .et { font-size: 14px; font-weight: 700; margin-bottom: 3px; }
+        .event-card .tm { font-size: 11px; color: var(--text2); margin-bottom: 6px; }
+        .bl-item { display: flex; align-items: center; gap: 8px; padding: 5px 0; font-size: 13px; border-bottom: 1px solid var(--border); }
+        .bl-item:last-child { border-bottom: none; }
+        .bl-item input { width: 18px; height: 18px; cursor: pointer; flex-shrink: 0; }
+        .bl-item.checked label { text-decoration: line-through; color: var(--text2); }
+        .fab { position: fixed; bottom: 24px; right: 24px; width: 56px; height: 56px; background: var(--primary); color: white; border: none; border-radius: 50%; font-size: 28px; cursor: pointer; box-shadow: 0 4px 12px rgba(25,118,210,0.4); z-index: 200; display: flex; align-items: center; justify-content: center; }
+        .overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.5); display: flex; align-items: center; justify-content: center; z-index: 300; padding: 12px; }
+        .modal { background: white; border-radius: 16px; width: 100%; max-width: 480px; max-height: 92vh; overflow-y: auto; }
+        .mh { padding: 16px 20px; border-bottom: 1px solid var(--border); display: flex; align-items: center; justify-content: space-between; position: sticky; top: 0; background: white; }
+        .mh h3 { font-size: 16px; font-weight: 700; }
+        .mc { background: none; border: none; font-size: 22px; cursor: pointer; color: var(--text2); }
+        .mb { padding: 16px 20px; }
+        .fg { margin-bottom: 14px; }
+        .fg label { display: block; font-size: 12px; font-weight: 700; color: var(--text2); margin-bottom: 5px; }
+        .fg input, .fg select, .fg textarea { width: 100%; padding: 10px 12px; border: 1px solid var(--border); border-radius: 8px; font-size: 15px; font-family: inherit; outline: none; }
+        .fg input:focus, .fg select:focus, .fg textarea:focus { border-color: var(--primary); }
+        .row { display: flex; gap: 8px; }
+        .row input { flex: 1; }
+        .ibt { background: var(--bg); border: 1px solid var(--border); border-radius: 8px; width: 44px; font-size: 18px; cursor: pointer; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+        .ibt.rec { background: #ffebee; border-color: #F44336; animation: pulse 1s infinite; }
+        @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.5} }
+        .mcbs { display: grid; grid-template-columns: repeat(4,1fr); gap: 6px; }
+        .mcb input { display: none; }
+        .mcb label { display: block; text-align: center; padding: 7px 4px; border-radius: 8px; border: 2px solid var(--border); cursor: pointer; font-size: 11px; font-weight: 700; }
+        .btag { display: inline-flex; align-items: center; gap: 4px; padding: 4px 10px; background: #E3F2FD; color: var(--primary); border-radius: 14px; font-size: 12px; margin: 2px; }
+        .btag button { background: none; border: none; cursor: pointer; font-size: 12px; color: var(--primary); padding: 0; }
+        .btags { min-height: 38px; display: flex; flex-wrap: wrap; gap: 2px; padding: 6px; border: 1px solid var(--border); border-radius: 8px; }
+        .mf { padding: 12px 20px; border-top: 1px solid var(--border); display: flex; gap: 10px; justify-content: flex-end; position: sticky; bottom: 0; background: white; }
+        .btn-c { background: none; border: 1px solid var(--border); padding: 10px 20px; border-radius: 8px; font-size: 14px; cursor: pointer; font-family: inherit; }
+        .btn-s { background: var(--primary); color: white; border: none; padding: 10px 24px; border-radius: 8px; font-size: 14px; font-weight: 700; cursor: pointer; font-family: inherit; }
+        .btn-s:disabled { opacity: 0.6; }
+        .tab-content { display: none; }
+        .tab-content.active { display: block; }
+        .srow { display: flex; align-items: center; justify-content: space-between; padding: 10px 0; border-bottom: 1px solid var(--border); }
+        .srow:last-child { border-bottom: none; }
+        .mni { width: 110px; padding: 6px 10px; border: 1px solid var(--border); border-radius: 6px; font-size: 14px; font-family: inherit; }
+        .sp { text-align: center; padding: 48px 20px; }
+        .sp h2 { font-size: 20px; margin-bottom: 10px; }
+        .sp p { color: var(--text2); margin-bottom: 20px; line-height: 1.6; }
+    </style>
+</head>
+<body>
+
+<header class="header">
+    <h1>&#128197; 家族スケジュール</h1>
+    <div style="display:flex;gap:8px;align-items:center">
+        <span id="connStatus" style="font-size:12px;opacity:0.9"></span>
+        <button id="signInBtn" class="btn-white" onclick="handleSignIn()">ログイン</button>
+        <button id="signOutBtn" class="btn-out" onclick="handleSignOut()">ログアウト</button>
+    </div>
+</header>
+
+<nav class="nav-tabs">
+    <div class="nav-tab active" onclick="switchTab('calendar')">&#128197; カレンダー</div>
+    <div class="nav-tab" onclick="switchTab('today')">&#128203; 今日</div>
+    <div class="nav-tab" onclick="switchTab('checklist')">&#9989; 持ち物</div>
+    <div class="nav-tab" onclick="switchTab('settings')">&#9881; 設定</div>
+</nav>
+
+<div class="main">
+    <div id="tab-calendar" class="tab-content active">
+        <div class="card"><div class="member-legend" id="memberLegend"></div></div>
+        <div class="card cal-header">
+            <button class="cal-nav" onclick="changeMonth(-1)">&#8249;</button>
+            <span class="cal-title" id="monthTitle"></span>
+            <button class="cal-nav" onclick="changeMonth(1)">&#8250;</button>
+        </div>
+        <div class="cal-grid">
+            <div class="cal-wdays"><div>日</div><div>月</div><div>火</div><div>水</div><div>木</div><div>金</div><div>土</div></div>
+            <div class="cal-days" id="calDays"></div>
+        </div>
+        <div id="spPrompt" class="card sp" style="margin-top:12px;display:none">
+            <h2>&#128217; 家族スケジュール管理</h2>
+            <p>Googleカレンダーと連携して<br>家族みんなの予定を管理しましょう</p>
+            <button class="btn-s" onclick="handleSignIn()">Google でログイン</button>
+        </div>
+    </div>
+
+    <div id="tab-today" class="tab-content">
+        <div class="card">
+            <h2 id="todayTitle" style="font-size:15px;font-weight:700;margin-bottom:12px;color:var(--primary)">今日の予定</h2>
+            <div id="todayEvents"><p style="color:var(--text2);text-align:center;padding:20px">読み込み中...</p></div>
+        </div>
+    </div>
+
+    <div id="tab-checklist" class="tab-content">
+        <div class="card">
+            <h3 style="font-size:15px;font-weight:700;margin-bottom:14px">&#127890; 今日の持ち物チェック</h3>
+            <div id="checkContent"><p style="color:var(--text2);text-align:center;padding:16px">予定に持ち物を登録するとここに表示されます</p></div>
+        </div>
+    </div>
+
+    <div id="tab-settings" class="tab-content">
+        <div class="card">
+            <h3 style="font-size:15px;font-weight:700;margin-bottom:14px">&#128106; メンバー設定</h3>
+            <div id="memberSettings"></div>
+        </div>
+        <div class="card">
+            <h3 style="font-size:15px;font-weight:700;margin-bottom:14px">&#128197; 接続状態</h3>
+            <div class="srow"><span>Googleカレンダー</span><span id="calStatus" style="color:var(--text2)">未接続</span></div>
+        </div>
+    </div>
+</div>
+
+<button class="fab" onclick="openAdd()">&#65291;</button>
+
+<!-- 予定追加モーダル -->
+<div id="addModal" class="overlay" style="display:none" onclick="if(event.target===this)closeAdd()">
+    <div class="modal">
+        <div class="mh"><h3>予定を追加</h3><button class="mc" onclick="closeAdd()">&#10005;</button></div>
+        <div class="mb">
+            <div class="fg">
+                <label>タイトル ＊</label>
+                <div class="row">
+                    <input type="text" id="evTitle" placeholder="例：保育園、習い事、通院...">
+                    <button class="ibt" id="voiceBtn" onclick="toggleVoice()">&#127897;</button>
+                    <button class="ibt" onclick="openCam()">&#128247;</button>
+                </div>
+            </div>
+            <div class="fg"><label>日付 ＊</label><input type="date" id="evDate"></div>
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+                <div class="fg"><label>開始時刻</label><input type="time" id="evStart"></div>
+                <div class="fg"><label>終了時刻</label><input type="time" id="evEnd"></div>
+            </div>
+            <div class="fg">
+                <label>対象メンバー（複数選択可）</label>
+                <div class="mcbs" id="memberCbs"></div>
+            </div>
+            <div class="fg">
+                <label>持ち物（Enterで追加）</label>
+                <div class="row" style="margin-bottom:8px">
+                    <input type="text" id="blInput" placeholder="例：水筒、弁当、上履き..." onkeypress="if(event.key==='Enter'){event.preventDefault();addBl()}">
+                    <button class="ibt" onclick="addBl()">&#65291;</button>
+                </div>
+                <div class="btags" id="blTags"></div>
+            </div>
+            <div class="fg"><label>メモ</label><textarea id="evNote" rows="3" placeholder="自由記入..."></textarea></div>
+        </div>
+        <div class="mf">
+            <button class="btn-c" onclick="closeAdd()">キャンセル</button>
+            <button class="btn-s" id="saveBtn" onclick="saveEv()">保存する</button>
+        </div>
+    </div>
+</div>
+
+<!-- 詳細モーダル -->
+<div id="detModal" class="overlay" style="display:none" onclick="if(event.target===this)closeDet()">
+    <div class="modal">
+        <div class="mh"><h3 id="detTitle" style="font-size:15px">予定の詳細</h3><button class="mc" onclick="closeDet()">&#10005;</button></div>
+        <div class="mb" id="detBody"></div>
+        <div class="mf"><button class="btn-c" onclick="closeDet()">閉じる</button></div>
+    </div>
+</div>
+
+<!-- カメラモーダル -->
+<div id="camModal" class="overlay" style="display:none">
+    <div class="modal" style="max-width:400px">
+        <div class="mh"><h3>&#128247; 写真から読み取る</h3><button class="mc" onclick="closeCam()">&#10005;</button></div>
+        <div class="mb">
+            <video id="camVideo" style="width:100%;border-radius:8px;background:#000;max-height:280px;object-fit:cover" autoplay playsinline muted></video>
+            <canvas id="camCanvas" style="display:none"></canvas>
+            <button class="btn-s" onclick="capPhoto()" style="width:100%;margin-top:10px">&#128247; 撮影する</button>
+            <div id="camResult" style="display:none;margin-top:12px;padding:12px;background:var(--bg);border-radius:8px">
+                <p style="font-size:12px;color:var(--text2);margin-bottom:6px">撮影しました。タイトルを入力してください。</p>
+                <button class="btn-s" onclick="closeCam()" style="width:100%">閉じる</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+// ===== CONFIG =====
+var CLIENT_ID = '55276251258-eoumi828hrut2k9jp6b05iia31q4gloq.apps.googleusercontent.com';
+var SCOPES = 'https://www.googleapis.com/auth/calendar';
+
+// ===== STATE =====
+var tokenClient = null;
+var gapiReady = false;
+var gisReady = false;
+var accessToken = null;
+var events = [];
+var ym = { y: new Date().getFullYear(), m: new Date().getMonth() };
+var pendingBl = [];
+var camStream = null;
+var recog = null;
+var isRec = false;
+var members = JSON.parse(localStorage.getItem('sc_members') || 'null') || [
+    {id:'papa',  name:'パパ',  color:'#1976D2'},
+    {id:'mama',  name:'ママ',  color:'#E91E63'},
+    {id:'c1',    name:'子供①',color:'#4CAF50'},
+    {id:'c2',    name:'子供②',color:'#FF9800'},
+    {id:'c3',    name:'子供③',color:'#9C27B0'},
+    {id:'c4',    name:'子供④',color:'#F44336'},
+    {id:'work',  name:'仕事', color:'#607D8B'},
+    {id:'fam',   name:'家族', color:'#00BCD4'}
+];
+var blData = JSON.parse(localStorage.getItem('sc_bl') || '{}');
+
+// ===== GAPI INIT =====
+function gapiLoaded() {
+    gapi.load('client', function() {
+        gapi.client.init({
+            discoveryDocs: ['https://www.googleapis.com/discovery/v1/apis/calendar/v3/rest']
+        }).then(function() {
+            gapiReady = true;
+            tryAutoLogin();
+        });
+    });
+}
+
+function gisLoaded() {
+    tokenClient = google.accounts.oauth2.initTokenClient({
+        client_id: CLIENT_ID,
+        scope: SCOPES,
+        callback: function(resp) {
+            if (resp.error) { console.error(resp); return; }
+            accessToken = resp.access_token;
+            sessionStorage.setItem('sc_tok', accessToken);
+            onLogin();
+        }
+    });
+    gisReady = true;
+    tryAutoLogin();
+}
+
+function tryAutoLogin() {
+    if (!gapiReady || !gisReady) return;
+    var tok = sessionStorage.getItem('sc_tok');
+    if (tok) {
+        accessToken = tok;
+        gapi.client.setToken({ access_token: tok });
+        onLogin();
+    } else {
+        document.getElementById('spPrompt').style.display = 'block';
+    }
+}
+
+// ===== AUTH =====
+function handleSignIn() {
+    if (!tokenClient) { alert('しばらくお待ちください（初期化中）'); return; }
+    tokenClient.requestAccessToken({ prompt: '' });
+}
+
+function handleSignOut() {
+    accessToken = null;
+    sessionStorage.removeItem('sc_tok');
+    gapi.client.setToken(null);
+    document.getElementById('signInBtn').style.display = 'block';
+    document.getElementById('signOutBtn').style.display = 'none';
+    document.getElementById('connStatus').textContent = '';
+    document.getElementById('spPrompt').style.display = 'block';
+    document.getElementById('calStatus').textContent = '未接続';
+    document.getElementById('calStatus').style.color = 'var(--text2)';
+    events = [];
+    renderCal();
+}
+
+function onLogin() {
+    document.getElementById('signInBtn').style.display = 'none';
+    document.getElementById('signOutBtn').style.display = 'block';
+    document.getElementById('connStatus').textContent = '✅ 接続中';
+    document.getElementById('spPrompt').style.display = 'none';
+    document.getElementById('calStatus').textContent = '接続済み ✅';
+    document.getElementById('calStatus').style.color = '#4CAF50';
+    loadEvents();
+}
+
+// ===== CALENDAR API =====
+function loadEvents() {
+    var y = ym.y, m = ym.m;
+    gapi.client.calendar.events.list({
+        calendarId: 'primary',
+        timeMin: new Date(y, m, 1).toISOString(),
+        timeMax: new Date(y, m+1, 0, 23, 59, 59).toISOString(),
+        singleEvents: true,
+        orderBy: 'startTime',
+        maxResults: 250
+    }).then(function(res) {
+        events = res.result.items || [];
+        renderCal();
+        renderToday();
+        renderCl();
+    }).catch(function(e) {
+        console.error(e);
+        if (e.status === 401) handleSignOut();
+    });
+}
+
+function saveEvToApi(data) {
+    var desc = '';
+    if (data.members.length > 0) {
+        var names = data.members.map(function(id) {
+            var m = members.find(function(x){return x.id===id;});
+            return m ? m.name : id;
+        });
+        desc += '👥 ' + names.join('、') + '\n';
+    }
+    if (data.bl.length > 0) desc += '🎒 持ち物：' + data.bl.join('、') + '\n';
+    if (data.note) desc += '📝 ' + data.note;
+
+    var ev = { summary: data.title, description: desc, start: {}, end: {} };
+    if (data.st && data.et) {
+        ev.start = { dateTime: data.date + 'T' + data.st + ':00', timeZone: 'Asia/Tokyo' };
+        ev.end   = { dateTime: data.date + 'T' + data.et + ':00', timeZone: 'Asia/Tokyo' };
+    } else {
+        ev.start = { date: data.date };
+        ev.end   = { date: data.date };
+    }
+    if (data.members.length > 0) {
+        var fm = members.find(function(x){return x.id===data.members[0];});
+        if (fm) ev.colorId = c2id(fm.color);
+    }
+
+    return gapi.client.calendar.events.insert({ calendarId: 'primary', resource: ev })
+    .then(function(res) {
+        if (data.bl.length > 0) {
+            blData[res.result.id] = data.bl.map(function(b){return {name:b,checked:false};});
+            localStorage.setItem('sc_bl', JSON.stringify(blData));
+        }
+        loadEvents();
+        return true;
+    }).catch(function(e) {
+        console.error(e);
+        alert('保存に失敗しました: ' + (e.result && e.result.error ? e.result.error.message : e.message));
+        return false;
+    });
+}
+
+function c2id(c) {
+    var map = {'#1976D2':'9','#E91E63':'4','#4CAF50':'2','#FF9800':'6','#9C27B0':'3','#F44336':'11','#607D8B':'8','#00BCD4':'7'};
+    return map[c] || '1';
+}
+
+function evColor(ev) {
+    var desc = ev.description || '';
+    for (var i=0; i<members.length; i++) {
+        if (desc.indexOf(members[i].name) >= 0) return members[i].color;
+    }
+    var cmap = {'1':'#7986CB','2':'#33B679','3':'#8E24AA','4':'#E67C73','5':'#F6BF26','6':'#F4511E','7':'#039BE5','8':'#616161','9':'#3F51B5','10':'#0B8043','11':'#D50000'};
+    return cmap[ev.colorId] || '#1976D2';
+}
+
+// ===== UI RENDER =====
+function initUI() {
+    renderLegend();
+    renderMemberCbs();
+    renderMemberSettings();
+    renderCal();
+    updateTodayTitle();
+    setToday();
+}
+
+function renderLegend() {
+    document.getElementById('memberLegend').innerHTML = members.map(function(m) {
+        return '<div class="legend-item"><div class="dot" style="background:' + m.color + '"></div><span>' + m.name + '</span></div>';
+    }).join('');
+}
+
+function renderMemberCbs() {
+    document.getElementById('memberCbs').innerHTML = members.map(function(m) {
+        return '<div class="mcb"><input type="checkbox" id="mc-' + m.id + '" value="' + m.id + '" onchange="updCbLabel(this)"><label for="mc-' + m.id + '" style="border-color:' + m.color + ';color:' + m.color + '">' + m.name + '</label></div>';
+    }).join('');
+}
+
+function updCbLabel(cb) {
+    var label = cb.nextElementSibling;
+    var m = members.find(function(x){return x.id===cb.value;});
+    if (!m) return;
+    if (cb.checked) { label.style.background = m.color; label.style.color = 'white'; }
+    else { label.style.background = ''; label.style.color = m.color; }
+}
+
+function renderMemberSettings() {
+    document.getElementById('memberSettings').innerHTML = members.map(function(m, i) {
+        return '<div class="srow"><div style="display:flex;align-items:center;gap:8px"><div class="dot" style="background:' + m.color + '"></div><input class="mni" value="' + m.name + '" onchange="updMember(' + i + ',this.value)"></div><span style="font-size:11px;color:var(--text2)">' + m.color + '</span></div>';
+    }).join('');
+}
+
+function updMember(i, name) {
+    members[i].name = name;
+    localStorage.setItem('sc_members', JSON.stringify(members));
+    renderLegend();
+    renderMemberCbs();
+}
+
+var MONTHS = ['1月','2月','3月','4月','5月','6月','7月','8月','9月','10月','11月','12月'];
+
+function renderCal() {
+    var y = ym.y, m = ym.m;
+    document.getElementById('monthTitle').textContent = y + '年 ' + MONTHS[m];
+    var firstDay = new Date(y, m, 1).getDay();
+    var days = new Date(y, m+1, 0).getDate();
+    var prev = new Date(y, m, 0).getDate();
+    var todayStr = fmtD(new Date());
+    var html = '';
+    for (var i = firstDay-1; i >= 0; i--)
+        html += '<div class="cal-day other"><div class="dn">' + (prev-i) + '</div></div>';
+    for (var d = 1; d <= days; d++) {
+        var ds = y + '-' + pad(m+1) + '-' + pad(d);
+        var dow = new Date(y, m, d).getDay();
+        var cls = 'cal-day';
+        if (ds === todayStr) cls += ' today';
+        if (dow === 0) cls += ' sun';
+        if (dow === 6) cls += ' sat';
+        var dayEvs = events.filter(function(e){ return (e.start.date||e.start.dateTime||'').substring(0,10) === ds; });
+        var chips = dayEvs.slice(0,3).map(function(e) {
+            var t = (e.summary||'（無題）').replace(/'/g,"&#39;");
+            return '<div class="chip" style="background:' + evColor(e) + '" onclick="event.stopPropagation();showDet(\'' + e.id + '\')" title="' + t + '">' + (e.summary||'（無題）') + '</div>';
+        }).join('');
+        var more = dayEvs.length > 3 ? '<div style="font-size:9px;color:var(--text2)">+' + (dayEvs.length-3) + '件</div>' : '';
+        html += '<div class="' + cls + '" onclick="openAddWithDate(\'' + ds + '\')"><div class="dn">' + d + '</div>' + chips + more + '</div>';
+    }
+    var used = firstDay + days;
+    var rem = used % 7 === 0 ? 0 : 7 - (used % 7);
+    for (var j = 1; j <= rem; j++)
+        html += '<div class="cal-day other"><div class="dn">' + j + '</div></div>';
+    document.getElementById('calDays').innerHTML = html;
+}
+
+function renderToday() {
+    var ts = fmtD(new Date());
+    var evs = events.filter(function(e){ return (e.start.date||e.start.dateTime||'').substring(0,10) === ts; });
+    var el = document.getElementById('todayEvents');
+    if (!evs.length) { el.innerHTML = '<p style="color:var(--text2);text-align:center;padding:20px">今日の予定はありません</p>'; return; }
+    el.innerHTML = evs.map(function(e) {
+        var color = evColor(e);
+        var bls = getBl(e);
+        var blHtml = '';
+        if (bls.length) {
+            blHtml = '<div style="font-size:11px;color:var(--text2);font-weight:700;margin-top:6px;margin-bottom:2px">🎒 持ち物</div>';
+            blHtml += bls.map(function(b, i) {
+                return '<div class="bl-item' + (b.checked?' checked':'') + '"><input type="checkbox" id="td-' + e.id + '-' + i + '"' + (b.checked?' checked':'') + ' onchange="togBl(\'' + e.id + '\',' + i + ',this.checked)"><label for="td-' + e.id + '-' + i + '">' + b.name + '</label></div>';
+            }).join('');
+        }
+        return '<div class="event-card" style="border-left-color:' + color + '"><div class="et">' + (e.summary||'（無題）') + '</div><div class="tm">' + fmtT(e) + '</div>' + blHtml + '</div>';
+    }).join('');
+}
+
+function renderCl() {
+    var ts = fmtD(new Date());
+    var evs = events.filter(function(e){ return (e.start.date||e.start.dateTime||'').substring(0,10) === ts; });
+    var el = document.getElementById('checkContent');
+    var groups = evs.map(function(e){ return {id:e.id, title:e.summary||'（無題）', items:getBl(e)}; }).filter(function(g){ return g.items.length; });
+    if (!groups.length) { el.innerHTML = '<p style="color:var(--text2);text-align:center;padding:16px">今日の予定に持ち物を登録するとここに表示されます</p>'; return; }
+    el.innerHTML = groups.map(function(g) {
+        return '<div style="margin-bottom:14px"><div style="font-size:13px;font-weight:700;margin-bottom:6px">📌 ' + g.title + '</div>' +
+            g.items.map(function(b,i) {
+                return '<div class="bl-item' + (b.checked?' checked':'') + '"><input type="checkbox" id="cl-' + g.id + '-' + i + '"' + (b.checked?' checked':'') + ' onchange="togBl(\'' + g.id + '\',' + i + ',this.checked)"><label for="cl-' + g.id + '-' + i + '">' + b.name + '</label></div>';
+            }).join('') + '</div>';
+    }).join('');
+}
+
+function getBl(ev) {
+    if (blData[ev.id]) return blData[ev.id];
+    var m = (ev.description||'').match(/🎒 持ち物：(.+)/);
+    if (!m) return [];
+    return m[1].split(/[、,]/).map(function(s){ return {name:s.trim(),checked:false}; });
+}
+
+function togBl(evId, idx, checked) {
+    if (!blData[evId]) {
+        var ev = events.find(function(e){return e.id===evId;});
+        if (ev) blData[evId] = getBl(ev);
+    }
+    if (blData[evId] && blData[evId][idx]) {
+        blData[evId][idx].checked = checked;
+        localStorage.setItem('sc_bl', JSON.stringify(blData));
+    }
+    renderToday(); renderCl();
+}
+
+function showDet(evId) {
+    var ev = events.find(function(e){return e.id===evId;});
+    if (!ev) return;
+    var color = evColor(ev);
+    var bls = getBl(ev);
+    document.getElementById('detTitle').textContent = ev.summary || '（無題）';
+    var html = '<div style="border-left:4px solid ' + color + ';padding-left:14px;margin-bottom:14px"><div style="font-size:13px;color:var(--text2)">' + fmtT(ev) + '</div>' + (ev.description ? '<div style="margin-top:8px;font-size:13px;white-space:pre-wrap;color:var(--text2)">' + ev.description + '</div>' : '') + '</div>';
+    if (bls.length) {
+        html += '<div style="font-size:14px;font-weight:700;margin-bottom:8px">🎒 持ち物チェック</div>';
+        html += bls.map(function(b,i) {
+            return '<div class="bl-item' + (b.checked?' checked':'') + '"><input type="checkbox" id="dt-' + evId + '-' + i + '"' + (b.checked?' checked':'') + ' onchange="togBl(\'' + evId + '\',' + i + ',this.checked)"><label for="dt-' + evId + '-' + i + '">' + b.name + '</label></div>';
+        }).join('');
+    } else {
+        html += '<p style="color:var(--text2);font-size:13px">持ち物の登録はありません</p>';
+    }
+    document.getElementById('detBody').innerHTML = html;
+    document.getElementById('detModal').style.display = 'flex';
+}
+function closeDet() { document.getElementById('detModal').style.display = 'none'; }
+
+// ===== ADD MODAL =====
+function openAdd() {
+    pendingBl = []; renderBlTags();
+    document.getElementById('evTitle').value = '';
+    document.getElementById('evNote').value = '';
+    document.getElementById('evStart').value = '';
+    document.getElementById('evEnd').value = '';
+    setToday();
+    document.querySelectorAll('.mcb input').forEach(function(cb) {
+        cb.checked = false;
+        var m = members.find(function(x){return x.id===cb.value;});
+        if (m) { cb.nextElementSibling.style.background=''; cb.nextElementSibling.style.color=m.color; }
+    });
+    document.getElementById('addModal').style.display = 'flex';
+    setTimeout(function(){document.getElementById('evTitle').focus();}, 100);
+}
+function openAddWithDate(ds) { openAdd(); document.getElementById('evDate').value = ds; }
+function closeAdd() { document.getElementById('addModal').style.display = 'none'; stopRec(); }
+
+function saveEv() {
+    var title = document.getElementById('evTitle').value.trim();
+    var date = document.getElementById('evDate').value;
+    if (!title) { alert('タイトルを入力してください'); return; }
+    if (!date) { alert('日付を選択してください'); return; }
+    if (!accessToken) { alert('ログインしてからお試しください'); return; }
+    var btn = document.getElementById('saveBtn');
+    btn.textContent = '保存中...'; btn.disabled = true;
+    var mems = Array.from(document.querySelectorAll('.mcb input:checked')).map(function(c){return c.value;});
+    saveEvToApi({
+        title: title, date: date,
+        st: document.getElementById('evStart').value,
+        et: document.getElementById('evEnd').value,
+        members: mems, bl: pendingBl.slice(),
+        note: document.getElementById('evNote').value.trim()
+    }).then(function(ok) {
+        btn.textContent = '保存する'; btn.disabled = false;
+        if (ok) closeAdd();
+    });
+}
+
+// ===== BELONGINGS =====
+function addBl() {
+    var inp = document.getElementById('blInput');
+    var vals = inp.value.trim().split(/[、,\s]+/).filter(Boolean);
+    pendingBl = pendingBl.concat(vals);
+    inp.value = ''; renderBlTags();
+}
+function rmBl(i) { pendingBl.splice(i,1); renderBlTags(); }
+function renderBlTags() {
+    document.getElementById('blTags').innerHTML = pendingBl.map(function(b,i) {
+        return '<span class="btag">' + b + '<button onclick="rmBl(' + i + ')">&#10005;</button></span>';
+    }).join('');
+}
+
+// ===== VOICE =====
+function toggleVoice() { isRec ? stopRec() : startRec(); }
+function startRec() {
+    var SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+    if (!SR) { alert('音声入力はChromeでご利用ください'); return; }
+    recog = new SR();
+    recog.lang = 'ja-JP'; recog.continuous = false; recog.interimResults = false;
+    recog.onresult = function(e) { document.getElementById('evTitle').value = e.results[0][0].transcript; stopRec(); };
+    recog.onerror = stopRec; recog.onend = stopRec;
+    recog.start(); isRec = true;
+    var btn = document.getElementById('voiceBtn');
+    btn.classList.add('rec'); btn.innerHTML = '&#9209;';
+}
+function stopRec() {
+    if (recog) { recog.stop(); recog = null; } isRec = false;
+    var btn = document.getElementById('voiceBtn');
+    if (btn) { btn.classList.remove('rec'); btn.innerHTML = '&#127897;'; }
+}
+
+// ===== CAMERA =====
+function openCam() {
+    document.getElementById('camModal').style.display = 'flex';
+    document.getElementById('camResult').style.display = 'none';
+    navigator.mediaDevices.getUserMedia({video:{facingMode:'environment'}})
+    .then(function(s) { camStream=s; document.getElementById('camVideo').srcObject=s; })
+    .catch(function(e) { alert('カメラを起動できませんでした: '+e.message); closeCam(); });
+}
+function closeCam() {
+    if (camStream) { camStream.getTracks().forEach(function(t){t.stop();}); camStream=null; }
+    document.getElementById('camModal').style.display = 'none';
+}
+function capPhoto() {
+    var v=document.getElementById('camVideo'), c=document.getElementById('camCanvas');
+    c.width=v.videoWidth; c.height=v.videoHeight;
+    c.getContext('2d').drawImage(v,0,0);
+    document.getElementById('camResult').style.display = 'block';
+}
+
+// ===== TABS =====
+function switchTab(name) {
+    var tabs = ['calendar','today','checklist','settings'];
+    tabs.forEach(function(t, i) {
+        document.querySelectorAll('.nav-tab')[i].classList.toggle('active', t===name);
+        document.getElementById('tab-'+t).classList.toggle('active', t===name);
+    });
+    if (name==='today') renderToday();
+    if (name==='checklist') renderCl();
+}
+
+function changeMonth(d) {
+    ym.m += d;
+    if (ym.m > 11) { ym.m=0; ym.y++; }
+    else if (ym.m < 0) { ym.m=11; ym.y--; }
+    renderCal();
+    if (accessToken) loadEvents();
+}
+
+// ===== UTILS =====
+function fmtD(d) { return d.getFullYear()+'-'+pad(d.getMonth()+1)+'-'+pad(d.getDate()); }
+function pad(n) { return String(n).padStart(2,'0'); }
+function setToday() { document.getElementById('evDate').value = fmtD(new Date()); }
+function updateTodayTitle() {
+    var d=new Date(), days=['日','月','火','水','木','金','土'];
+    document.getElementById('todayTitle').textContent = (d.getMonth()+1)+'月'+d.getDate()+'日（'+days[d.getDay()]+'）の予定';
+}
+function fmtT(ev) {
+    if (ev.start.date) return '終日';
+    var s=new Date(ev.start.dateTime), e=new Date(ev.end.dateTime);
+    return pad(s.getHours())+':'+pad(s.getMinutes())+' ～ '+pad(e.getHours())+':'+pad(e.getMinutes());
+}
+
+window.addEventListener('load', initUI);
+</script>
+
+<!-- Google API は inline script の後に読み込む -->
+<script src="https://apis.google.com/js/api.js" onload="gapiLoaded()"></script>
+<script src="https://accounts.google.com/gsi/client" onload="gisLoaded()"></script>
+
+</body>
+</html>
