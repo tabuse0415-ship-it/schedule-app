@@ -188,21 +188,50 @@
     <div class="modal">
         <div class="mh"><h3 id="detTitle" style="font-size:15px">予定の詳細</h3><button class="mc" onclick="closeDet()">&#10005;</button></div>
         <div class="mb" id="detBody"></div>
-        <div class="mf"><button class="btn-c" onclick="closeDet()">閉じる</button></div>
+        <div class="mf">
+            <button class="btn-c" onclick="closeDet()">閉じる</button>
+            <button class="btn-s" id="editBtn" onclick="openEdit()" style="background:#FF9800">&#9999; 編集</button>
+            <button class="btn-s" id="delBtn" onclick="deleteEv()" style="background:#F44336">&#128465; 削除</button>
+        </div>
     </div>
 </div>
 
 <!-- カメラモーダル -->
 <div id="camModal" class="overlay" style="display:none">
-    <div class="modal" style="max-width:400px">
+    <div class="modal" style="max-width:420px">
         <div class="mh"><h3>&#128247; 写真から読み取る</h3><button class="mc" onclick="closeCam()">&#10005;</button></div>
         <div class="mb">
-            <video id="camVideo" style="width:100%;border-radius:8px;background:#000;max-height:280px;object-fit:cover" autoplay playsinline muted></video>
-            <canvas id="camCanvas" style="display:none"></canvas>
-            <button class="btn-s" onclick="capPhoto()" style="width:100%;margin-top:10px">&#128247; 撮影する</button>
-            <div id="camResult" style="display:none;margin-top:12px;padding:12px;background:var(--bg);border-radius:8px">
-                <p style="font-size:12px;color:var(--text2);margin-bottom:6px">撮影しました。タイトルを入力してください。</p>
-                <button class="btn-s" onclick="closeCam()" style="width:100%">閉じる</button>
+            <!-- カメラプレビュー -->
+            <div id="camView">
+                <video id="camVideo" style="width:100%;border-radius:8px;background:#000;max-height:260px;object-fit:cover" autoplay playsinline muted></video>
+                <button class="btn-s" onclick="capPhoto()" style="width:100%;margin-top:10px">&#128247; 撮影する</button>
+            </div>
+
+            <!-- AI解析中 -->
+            <div id="camLoading" style="display:none;text-align:center;padding:30px">
+                <div style="font-size:40px;margin-bottom:12px">&#129302;</div>
+                <p style="font-size:15px;font-weight:700;color:var(--primary)">AIが画像を解析中...</p>
+                <p style="font-size:12px;color:var(--text2);margin-top:6px">お便りや予定表から情報を読み取っています</p>
+            </div>
+
+            <!-- 解析結果 -->
+            <div id="camResult" style="display:none">
+                <img id="camPreviewImg" style="width:100%;border-radius:8px;max-height:160px;object-fit:cover;margin-bottom:12px">
+                <div style="background:#E8F5E9;border-radius:8px;padding:12px;margin-bottom:12px">
+                    <p style="font-size:12px;font-weight:700;color:#2E7D32;margin-bottom:8px">&#9989; AIが読み取った内容</p>
+                    <div id="ocrFields"></div>
+                </div>
+                <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
+                    <button class="btn-c" onclick="closeCam()">キャンセル</button>
+                    <button class="btn-s" onclick="applyOcr()">予定に反映する</button>
+                </div>
+            </div>
+
+            <!-- エラー -->
+            <div id="camError" style="display:none;text-align:center;padding:20px">
+                <div style="font-size:36px;margin-bottom:10px">&#128532;</div>
+                <p id="camErrMsg" style="font-size:14px;color:#F44336;margin-bottom:12px"></p>
+                <button class="btn-s" onclick="resetCam()" style="width:100%">もう一度撮影する</button>
             </div>
         </div>
     </div>
@@ -212,6 +241,7 @@
 // ===== CONFIG =====
 var CLIENT_ID = '55276251258-eoumi828hrut2k9jp6b05iia31q4gloq.apps.googleusercontent.com';
 var SCOPES = 'https://www.googleapis.com/auth/calendar';
+var GEMINI_KEY = 'AQ.Ab8RN6JOifaet-o6qBp_JeywV_fTHznG9Zz4aDGhKh39fbIKFA';
 
 // ===== STATE =====
 var tokenClient = null;
@@ -509,9 +539,12 @@ function togBl(evId, idx, checked) {
     renderToday(); renderCl();
 }
 
+var currentEvId = null;
+
 function showDet(evId) {
     var ev = events.find(function(e){return e.id===evId;});
     if (!ev) return;
+    currentEvId = evId;
     var color = evColor(ev);
     var bls = getBl(ev);
     document.getElementById('detTitle').textContent = ev.summary || '（無題）';
@@ -527,7 +560,54 @@ function showDet(evId) {
     document.getElementById('detBody').innerHTML = html;
     document.getElementById('detModal').style.display = 'flex';
 }
-function closeDet() { document.getElementById('detModal').style.display = 'none'; }
+function closeDet() { document.getElementById('detModal').style.display = 'none'; currentEvId = null; }
+
+function openEdit() {
+    var ev = events.find(function(e){return e.id===currentEvId;});
+    if (!ev) return;
+    closeDet();
+    openAdd();
+
+    // フォームに既存データを反映
+    document.getElementById('evTitle').value = ev.summary || '';
+    if (ev.start.date) {
+        document.getElementById('evDate').value = ev.start.date;
+    } else if (ev.start.dateTime) {
+        document.getElementById('evDate').value = ev.start.dateTime.substring(0,10);
+        document.getElementById('evStart').value = ev.start.dateTime.substring(11,16);
+        document.getElementById('evEnd').value = ev.end.dateTime.substring(11,16);
+    }
+
+    // 持ち物を反映
+    var bls = getBl(ev);
+    if (bls.length) {
+        pendingBl = bls.map(function(b){ return b.name; });
+        renderBlTags();
+    }
+
+    // メモを反映（説明文からメモ部分だけ）
+    var noteMatch = (ev.description||'').match(/📝 (.+)/);
+    if (noteMatch) document.getElementById('evNote').value = noteMatch[1];
+
+    // ボタンを「更新する」に変更
+    var btn = document.getElementById('saveBtn');
+    btn.textContent = '更新する';
+    btn.setAttribute('data-edit-id', currentEvId);
+}
+
+function deleteEv() {
+    if (!currentEvId) return;
+    if (!confirm('この予定を削除しますか？')) return;
+    gapi.client.calendar.events.delete({
+        calendarId: 'primary',
+        eventId: currentEvId
+    }).then(function() {
+        closeDet();
+        loadEvents();
+    }).catch(function(e) {
+        alert('削除に失敗しました: ' + (e.result&&e.result.error ? e.result.error.message : e.message));
+    });
+}
 
 // ===== ADD MODAL =====
 function openAdd() {
@@ -546,7 +626,13 @@ function openAdd() {
     setTimeout(function(){document.getElementById('evTitle').focus();}, 100);
 }
 function openAddWithDate(ds) { openAdd(); document.getElementById('evDate').value = ds; }
-function closeAdd() { document.getElementById('addModal').style.display = 'none'; stopRec(); }
+function closeAdd() {
+    document.getElementById('addModal').style.display = 'none';
+    stopRec();
+    var btn = document.getElementById('saveBtn');
+    btn.textContent = '保存する';
+    btn.removeAttribute('data-edit-id');
+}
 
 function saveEv() {
     var title = document.getElementById('evTitle').value.trim();
@@ -555,17 +641,64 @@ function saveEv() {
     if (!date) { alert('日付を選択してください'); return; }
     if (!accessToken) { alert('ログインしてからお試しください'); return; }
     var btn = document.getElementById('saveBtn');
-    btn.textContent = '保存中...'; btn.disabled = true;
+    var editId = btn.getAttribute('data-edit-id');
     var mems = Array.from(document.querySelectorAll('.mcb input:checked')).map(function(c){return c.value;});
-    saveEvToApi({
+    var data = {
         title: title, date: date,
         st: document.getElementById('evStart').value,
         et: document.getElementById('evEnd').value,
         members: mems, bl: pendingBl.slice(),
         note: document.getElementById('evNote').value.trim()
-    }).then(function(ok) {
-        btn.textContent = '保存する'; btn.disabled = false;
+    };
+
+    btn.textContent = editId ? '更新中...' : '保存中...';
+    btn.disabled = true;
+
+    var promise = editId ? updateEvToApi(editId, data) : saveEvToApi(data);
+    promise.then(function(ok) {
+        btn.textContent = editId ? '更新する' : '保存する';
+        btn.disabled = false;
+        btn.removeAttribute('data-edit-id');
         if (ok) closeAdd();
+    });
+}
+
+function updateEvToApi(evId, data) {
+    var desc = '';
+    if (data.members.length > 0) {
+        var names = data.members.map(function(id) {
+            var m = members.find(function(x){return x.id===id;});
+            return m ? m.name : id;
+        });
+        desc += '👥 ' + names.join('、') + '\n';
+    }
+    if (data.bl.length > 0) desc += '🎒 持ち物：' + data.bl.join('、') + '\n';
+    if (data.note) desc += '📝 ' + data.note;
+
+    var ev = { summary: data.title, description: desc, start: {}, end: {} };
+    if (data.st && data.et) {
+        ev.start = { dateTime: data.date + 'T' + data.st + ':00', timeZone: 'Asia/Tokyo' };
+        ev.end   = { dateTime: data.date + 'T' + data.et + ':00', timeZone: 'Asia/Tokyo' };
+    } else {
+        ev.start = { date: data.date };
+        ev.end   = { date: data.date };
+    }
+
+    return gapi.client.calendar.events.patch({
+        calendarId: 'primary',
+        eventId: evId,
+        resource: ev
+    }).then(function() {
+        if (data.bl.length > 0) {
+            blData[evId] = data.bl.map(function(b){return {name:b,checked:false};});
+            localStorage.setItem('sc_bl', JSON.stringify(blData));
+        }
+        loadEvents();
+        return true;
+    }).catch(function(e) {
+        console.error(e);
+        alert('更新に失敗しました: ' + (e.result&&e.result.error ? e.result.error.message : e.message));
+        return false;
     });
 }
 
@@ -602,23 +735,125 @@ function stopRec() {
     if (btn) { btn.classList.remove('rec'); btn.innerHTML = '&#127897;'; }
 }
 
-// ===== CAMERA =====
+// ===== CAMERA & OCR =====
+var ocrData = null;
+
 function openCam() {
     document.getElementById('camModal').style.display = 'flex';
-    document.getElementById('camResult').style.display = 'none';
+    resetCam();
     navigator.mediaDevices.getUserMedia({video:{facingMode:'environment'}})
     .then(function(s) { camStream=s; document.getElementById('camVideo').srcObject=s; })
-    .catch(function(e) { alert('カメラを起動できませんでした: '+e.message); closeCam(); });
+    .catch(function(e) {
+        // フロントカメラで再試行
+        navigator.mediaDevices.getUserMedia({video:true})
+        .then(function(s) { camStream=s; document.getElementById('camVideo').srcObject=s; })
+        .catch(function(e2) { alert('カメラを起動できませんでした: '+e2.message); closeCam(); });
+    });
 }
+
+function resetCam() {
+    document.getElementById('camView').style.display = 'block';
+    document.getElementById('camLoading').style.display = 'none';
+    document.getElementById('camResult').style.display = 'none';
+    document.getElementById('camError').style.display = 'none';
+    ocrData = null;
+}
+
 function closeCam() {
     if (camStream) { camStream.getTracks().forEach(function(t){t.stop();}); camStream=null; }
     document.getElementById('camModal').style.display = 'none';
 }
+
 function capPhoto() {
-    var v=document.getElementById('camVideo'), c=document.getElementById('camCanvas');
-    c.width=v.videoWidth; c.height=v.videoHeight;
-    c.getContext('2d').drawImage(v,0,0);
+    var v = document.getElementById('camVideo');
+    var c = document.getElementById('camCanvas');
+    c.width = v.videoWidth; c.height = v.videoHeight;
+    c.getContext('2d').drawImage(v, 0, 0);
+
+    // カメラ停止
+    if (camStream) { camStream.getTracks().forEach(function(t){t.stop();}); camStream=null; }
+
+    var base64 = c.toDataURL('image/jpeg', 0.8).split(',')[1];
+
+    // プレビュー画像
+    document.getElementById('camPreviewImg').src = 'data:image/jpeg;base64,' + base64;
+
+    // ローディング表示
+    document.getElementById('camView').style.display = 'none';
+    document.getElementById('camLoading').style.display = 'block';
+
+    // Gemini APIで解析
+    analyzeWithGemini(base64);
+}
+
+function analyzeWithGemini(base64) {
+    var prompt = 'この画像はスケジュール管理アプリ用の写真です。学校のお便り、習い事の案内、病院の予約票、イベントのチラシなどから予定情報を抽出してください。\n\n必ず以下のJSON形式だけで回答してください（説明文・コードブロック不要）:\n{"title":"イベント名または予定名","date":"YYYY-MM-DD形式","startTime":"HH:MM形式","endTime":"HH:MM形式","belongings":["持ち物1","持ち物2"],"notes":"その他メモ"}\n\n情報がない項目はnullにしてください。日本語で回答してください。';
+
+    fetch('https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=' + GEMINI_KEY, {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({
+            contents: [{
+                parts: [
+                    {text: prompt},
+                    {inline_data: {mime_type: 'image/jpeg', data: base64}}
+                ]
+            }],
+            generationConfig: {temperature: 0.1}
+        })
+    })
+    .then(function(r) { return r.json(); })
+    .then(function(data) {
+        if (!data.candidates || !data.candidates[0]) throw new Error('解析結果が取得できませんでした');
+        var text = data.candidates[0].content.parts[0].text;
+        // JSONを抽出
+        var match = text.match(/\{[\s\S]*\}/);
+        if (!match) throw new Error('情報を読み取れませんでした');
+        ocrData = JSON.parse(match[0]);
+        showOcrResult();
+    })
+    .catch(function(e) {
+        console.error(e);
+        document.getElementById('camLoading').style.display = 'none';
+        document.getElementById('camError').style.display = 'block';
+        document.getElementById('camErrMsg').textContent = e.message || '読み取りに失敗しました。もう一度お試しください。';
+    });
+}
+
+function showOcrResult() {
+    document.getElementById('camLoading').style.display = 'none';
     document.getElementById('camResult').style.display = 'block';
+
+    var d = ocrData;
+    var html = '';
+    if (d.title)     html += '<div style="margin-bottom:6px"><span style="font-size:11px;color:var(--text2)">タイトル</span><br><strong>' + d.title + '</strong></div>';
+    if (d.date)      html += '<div style="margin-bottom:6px"><span style="font-size:11px;color:var(--text2)">日付</span><br><strong>' + d.date + '</strong></div>';
+    if (d.startTime) html += '<div style="margin-bottom:6px"><span style="font-size:11px;color:var(--text2)">時間</span><br><strong>' + d.startTime + (d.endTime ? ' ～ ' + d.endTime : '') + '</strong></div>';
+    if (d.belongings && d.belongings.length) html += '<div style="margin-bottom:6px"><span style="font-size:11px;color:var(--text2)">持ち物</span><br><strong>' + d.belongings.join('、') + '</strong></div>';
+    if (d.notes)     html += '<div style="margin-bottom:6px"><span style="font-size:11px;color:var(--text2)">メモ</span><br><strong>' + d.notes + '</strong></div>';
+    if (!html)       html = '<p style="color:var(--text2);font-size:13px">情報を読み取れませんでした。手動で入力してください。</p>';
+
+    document.getElementById('ocrFields').innerHTML = html;
+}
+
+function applyOcr() {
+    if (!ocrData) { closeCam(); return; }
+    var d = ocrData;
+
+    // フォームを開く（まだ開いていない場合）
+    closeCam();
+    if (document.getElementById('addModal').style.display === 'none') openAdd();
+
+    // フォームに値を反映
+    if (d.title)     document.getElementById('evTitle').value = d.title;
+    if (d.date)      document.getElementById('evDate').value = d.date;
+    if (d.startTime) document.getElementById('evStart').value = d.startTime;
+    if (d.endTime)   document.getElementById('evEnd').value = d.endTime;
+    if (d.notes)     document.getElementById('evNote').value = d.notes;
+    if (d.belongings && d.belongings.length) {
+        pendingBl = d.belongings.slice();
+        renderBlTags();
+    }
 }
 
 // ===== TABS =====
