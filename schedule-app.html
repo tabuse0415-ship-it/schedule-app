@@ -71,6 +71,8 @@
         .btn-s:disabled { opacity: 0.6; }
         .tab-content { display: none; }
         .tab-content.active { display: block; }
+        .dow-btn { flex:1; padding:8px 2px; border-radius:8px; border:2px solid var(--border); background:white; cursor:pointer; font-size:13px; font-weight:700; font-family:inherit; transition:all 0.15s; }
+        .dow-btn.selected { background:var(--primary); color:white !important; border-color:var(--primary) !important; }
         .srow { display: flex; align-items: center; justify-content: space-between; padding: 10px 0; border-bottom: 1px solid var(--border); }
         .srow:last-child { border-bottom: none; }
         .mni { width: 110px; padding: 6px 10px; border: 1px solid var(--border); border-radius: 6px; font-size: 14px; font-family: inherit; }
@@ -184,6 +186,30 @@
                     <button class="ibt" onclick="addBl()">&#65291;</button>
                 </div>
                 <div class="btags" id="blTags"></div>
+            </div>
+            <!-- 繰り返し設定 -->
+            <div class="fg">
+                <label>&#128260; 繰り返し設定</label>
+                <div style="display:flex;align-items:center;gap:10px;margin-bottom:8px">
+                    <label style="display:flex;align-items:center;gap:6px;font-size:14px;font-weight:normal;color:var(--text);cursor:pointer">
+                        <input type="checkbox" id="repeatOn" onchange="toggleRepeat()" style="width:18px;height:18px">
+                        毎週繰り返す
+                    </label>
+                </div>
+                <div id="repeatOptions" style="display:none;background:var(--bg);border-radius:8px;padding:12px">
+                    <p style="font-size:12px;color:var(--text2);margin-bottom:8px">繰り返す曜日（複数選択可）</p>
+                    <div style="display:flex;gap:5px;margin-bottom:12px" id="dowBtns">
+                        <button type="button" class="dow-btn" data-dow="SU" onclick="toggleDow(this)" style="color:#F44336;border-color:#F44336">日</button>
+                        <button type="button" class="dow-btn" data-dow="MO" onclick="toggleDow(this)">月</button>
+                        <button type="button" class="dow-btn" data-dow="TU" onclick="toggleDow(this)">火</button>
+                        <button type="button" class="dow-btn" data-dow="WE" onclick="toggleDow(this)">水</button>
+                        <button type="button" class="dow-btn" data-dow="TH" onclick="toggleDow(this)">木</button>
+                        <button type="button" class="dow-btn" data-dow="FR" onclick="toggleDow(this)">金</button>
+                        <button type="button" class="dow-btn" data-dow="SA" onclick="toggleDow(this)" style="color:#1976D2;border-color:#1976D2">土</button>
+                    </div>
+                    <p style="font-size:12px;color:var(--text2);margin-bottom:6px">終了日（未入力の場合は無期限）</p>
+                    <input type="date" id="repeatUntil" style="width:100%;padding:8px 12px;border:1px solid var(--border);border-radius:8px;font-size:14px;font-family:inherit;outline:none">
+                </div>
             </div>
             <div class="fg"><label>メモ</label><textarea id="evNote" rows="3" placeholder="自由記入..."></textarea></div>
         </div>
@@ -433,6 +459,8 @@ function saveEvToApi(data) {
         var fm = members.find(function(x){return x.id===data.members[0];});
         if (fm) ev.colorId = c2id(fm.color);
     }
+    var rrule = buildRRule();
+    if (rrule) ev.recurrence = [rrule];
 
     return gapi.client.calendar.events.insert({ calendarId: 'primary', resource: ev })
     .then(function(res) {
@@ -684,6 +712,7 @@ function openAddWithDate(ds) { openAdd(); document.getElementById('evDate').valu
 function closeAdd() {
     document.getElementById('addModal').style.display = 'none';
     stopRec();
+    resetRepeat();
     var btn = document.getElementById('saveBtn');
     btn.textContent = '保存する';
     btn.removeAttribute('data-edit-id');
@@ -844,6 +873,60 @@ function stopRec() {
     if (recog) { recog.stop(); recog = null; } isRec = false;
     var btn = document.getElementById('voiceBtn');
     if (btn) { btn.classList.remove('rec'); btn.innerHTML = '&#127897;'; }
+}
+
+// ===== 繰り返し設定 =====
+function toggleRepeat() {
+    var on = document.getElementById('repeatOn').checked;
+    document.getElementById('repeatOptions').style.display = on ? 'block' : 'none';
+    if (on) {
+        // 開始日の曜日を自動選択
+        var date = document.getElementById('evDate').value;
+        if (date) {
+            var dow = new Date(date + 'T00:00:00').getDay();
+            var dowCodes = ['SU','MO','TU','WE','TH','FR','SA'];
+            document.querySelectorAll('.dow-btn').forEach(function(btn) {
+                if (btn.getAttribute('data-dow') === dowCodes[dow]) {
+                    btn.classList.add('selected');
+                } else {
+                    btn.classList.remove('selected');
+                }
+            });
+        }
+    }
+}
+
+function toggleDow(btn) {
+    btn.classList.toggle('selected');
+}
+
+function getSelectedDows() {
+    var selected = [];
+    document.querySelectorAll('.dow-btn.selected').forEach(function(btn) {
+        selected.push(btn.getAttribute('data-dow'));
+    });
+    return selected;
+}
+
+function buildRRule() {
+    if (!document.getElementById('repeatOn').checked) return null;
+    var dows = getSelectedDows();
+    if (!dows.length) return null;
+    var rule = 'RRULE:FREQ=WEEKLY;BYDAY=' + dows.join(',');
+    var until = document.getElementById('repeatUntil').value;
+    if (until) {
+        rule += ';UNTIL=' + until.replace(/-/g,'') + 'T235959Z';
+    }
+    return rule;
+}
+
+function resetRepeat() {
+    document.getElementById('repeatOn').checked = false;
+    document.getElementById('repeatOptions').style.display = 'none';
+    document.getElementById('repeatUntil').value = '';
+    document.querySelectorAll('.dow-btn').forEach(function(btn) {
+        btn.classList.remove('selected');
+    });
 }
 
 // ===== COPY TO MULTIPLE DATES =====
