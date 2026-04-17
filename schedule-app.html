@@ -188,10 +188,52 @@
     <div class="modal">
         <div class="mh"><h3 id="detTitle" style="font-size:15px">予定の詳細</h3><button class="mc" onclick="closeDet()">&#10005;</button></div>
         <div class="mb" id="detBody"></div>
-        <div class="mf">
+        <div class="mf" style="flex-wrap:wrap;gap:8px">
             <button class="btn-c" onclick="closeDet()">閉じる</button>
-            <button class="btn-s" id="editBtn" onclick="openEdit()" style="background:#FF9800">&#9999; 編集</button>
-            <button class="btn-s" id="delBtn" onclick="deleteEv()" style="background:#F44336">&#128465; 削除</button>
+            <button class="btn-s" onclick="openCopy()" style="background:#4CAF50">&#128203; コピー</button>
+            <button class="btn-s" onclick="openEdit()" style="background:#FF9800">&#9999; 編集</button>
+            <button class="btn-s" onclick="deleteEv()" style="background:#F44336">&#128465; 削除</button>
+        </div>
+    </div>
+</div>
+
+<!-- コピーモーダル -->
+<div id="copyModal" class="overlay" style="display:none" onclick="if(event.target===this)closeCopy()">
+    <div class="modal" style="max-width:420px">
+        <div class="mh"><h3>&#128203; 複数の日付にコピー</h3><button class="mc" onclick="closeCopy()">&#10005;</button></div>
+        <div class="mb">
+            <p style="font-size:13px;color:var(--text2);margin-bottom:12px">コピーしたい日付をタップして選択してください（複数選択可）</p>
+
+            <!-- 月ナビゲーション -->
+            <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
+                <button class="cal-nav" onclick="copyCal(-1)">&#8249;</button>
+                <span id="copyMonthTitle" style="font-size:15px;font-weight:700"></span>
+                <button class="cal-nav" onclick="copyCal(1)">&#8250;</button>
+            </div>
+
+            <!-- カレンダー -->
+            <div style="background:white;border-radius:8px;overflow:hidden;border:1px solid var(--border)">
+                <div style="display:grid;grid-template-columns:repeat(7,1fr);background:var(--primary);color:white">
+                    <div style="text-align:center;padding:6px;font-size:11px">日</div>
+                    <div style="text-align:center;padding:6px;font-size:11px">月</div>
+                    <div style="text-align:center;padding:6px;font-size:11px">火</div>
+                    <div style="text-align:center;padding:6px;font-size:11px">水</div>
+                    <div style="text-align:center;padding:6px;font-size:11px">木</div>
+                    <div style="text-align:center;padding:6px;font-size:11px">金</div>
+                    <div style="text-align:center;padding:6px;font-size:11px">土</div>
+                </div>
+                <div id="copyCalDays" style="display:grid;grid-template-columns:repeat(7,1fr)"></div>
+            </div>
+
+            <!-- 選択済み日付 -->
+            <div style="margin-top:12px">
+                <p style="font-size:12px;font-weight:700;color:var(--text2);margin-bottom:6px">選択した日付：<span id="copyCount" style="color:var(--primary)">0件</span></p>
+                <div id="copySelectedDates" style="display:flex;flex-wrap:wrap;gap:4px;min-height:28px"></div>
+            </div>
+        </div>
+        <div class="mf">
+            <button class="btn-c" onclick="closeCopy()">キャンセル</button>
+            <button class="btn-s" id="copyExecBtn" onclick="execCopy()" disabled>&#128203; コピーする</button>
         </div>
     </div>
 </div>
@@ -733,6 +775,128 @@ function stopRec() {
     if (recog) { recog.stop(); recog = null; } isRec = false;
     var btn = document.getElementById('voiceBtn');
     if (btn) { btn.classList.remove('rec'); btn.innerHTML = '&#127897;'; }
+}
+
+// ===== COPY TO MULTIPLE DATES =====
+var copyYM = { y: new Date().getFullYear(), m: new Date().getMonth() };
+var selectedDates = [];
+
+function openCopy() {
+    if (!currentEvId) return;
+    closeDet();
+    selectedDates = [];
+    copyYM = { y: new Date().getFullYear(), m: new Date().getMonth() };
+    renderCopyModal();
+    document.getElementById('copyModal').style.display = 'flex';
+}
+
+function closeCopy() {
+    document.getElementById('copyModal').style.display = 'none';
+    selectedDates = [];
+}
+
+function copyCal(d) {
+    copyYM.m += d;
+    if (copyYM.m > 11) { copyYM.m = 0; copyYM.y++; }
+    else if (copyYM.m < 0) { copyYM.m = 11; copyYM.y--; }
+    renderCopyModal();
+}
+
+function renderCopyModal() {
+    var y = copyYM.y, m = copyYM.m;
+    document.getElementById('copyMonthTitle').textContent = y + '年 ' + MONTHS[m];
+    var firstDay = new Date(y, m, 1).getDay();
+    var days = new Date(y, m+1, 0).getDate();
+    var prev = new Date(y, m, 0).getDate();
+    var todayStr = fmtD(new Date());
+    var html = '';
+
+    for (var i = firstDay-1; i >= 0; i--)
+        html += '<div style="min-height:36px;border-right:1px solid var(--border);border-bottom:1px solid var(--border);padding:4px;opacity:0.3"><div style="width:24px;height:24px;display:flex;align-items:center;justify-content:center;font-size:11px">' + (prev-i) + '</div></div>';
+
+    for (var d = 1; d <= days; d++) {
+        var ds = y + '-' + pad(m+1) + '-' + pad(d);
+        var dow = new Date(y, m, d).getDay();
+        var isSelected = selectedDates.indexOf(ds) >= 0;
+        var isToday = ds === todayStr;
+        var numColor = dow===0 ? '#F44336' : dow===6 ? '#1976D2' : 'var(--text)';
+        var bg = isSelected ? 'background:#1976D2;' : '';
+        var numStyle = isSelected ? 'background:white;color:#1976D2;border-radius:50%;' : (isToday ? 'background:#1976D2;color:white;border-radius:50%;' : 'color:' + numColor + ';');
+        html += '<div style="min-height:36px;border-right:1px solid var(--border);border-bottom:1px solid var(--border);padding:4px;cursor:pointer;' + bg + '" onclick="toggleDate(\'' + ds + '\')">' +
+            '<div style="width:24px;height:24px;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:' + (isSelected?'700':'500') + ';' + numStyle + '">' + d + '</div>' +
+            (isSelected ? '<div style="font-size:8px;color:white;text-align:center">✓</div>' : '') +
+            '</div>';
+    }
+
+    var used = firstDay + days;
+    var rem = used % 7 === 0 ? 0 : 7 - (used % 7);
+    for (var j = 1; j <= rem; j++)
+        html += '<div style="min-height:36px;border-right:1px solid var(--border);border-bottom:1px solid var(--border);padding:4px;opacity:0.3"><div style="width:24px;height:24px;display:flex;align-items:center;justify-content:center;font-size:11px">' + j + '</div></div>';
+
+    document.getElementById('copyCalDays').innerHTML = html;
+    updateCopySelected();
+}
+
+function toggleDate(ds) {
+    var idx = selectedDates.indexOf(ds);
+    if (idx >= 0) selectedDates.splice(idx, 1);
+    else selectedDates.push(ds);
+    selectedDates.sort();
+    renderCopyModal();
+}
+
+function updateCopySelected() {
+    document.getElementById('copyCount').textContent = selectedDates.length + '件';
+    document.getElementById('copyExecBtn').disabled = selectedDates.length === 0;
+    document.getElementById('copySelectedDates').innerHTML = selectedDates.map(function(ds) {
+        var d = new Date(ds + 'T00:00:00');
+        var days = ['日','月','火','水','木','金','土'];
+        return '<span style="background:#E3F2FD;color:var(--primary);border-radius:12px;padding:3px 10px;font-size:12px;display:inline-flex;align-items:center;gap:4px">' +
+            (d.getMonth()+1) + '/' + d.getDate() + '（' + days[d.getDay()] + '）' +
+            '<span onclick="toggleDate(\'' + ds + '\')" style="cursor:pointer;font-size:12px">✕</span></span>';
+    }).join('');
+}
+
+function execCopy() {
+    if (!currentEvId || !selectedDates.length) return;
+    var ev = events.find(function(e){return e.id===currentEvId;});
+    if (!ev) return;
+
+    var btn = document.getElementById('copyExecBtn');
+    btn.textContent = 'コピー中...'; btn.disabled = true;
+
+    // 元イベントの時間情報を取得
+    var isAllDay = !!ev.start.date;
+    var startTime = isAllDay ? null : ev.start.dateTime.substring(11,16);
+    var endTime   = isAllDay ? null : ev.end.dateTime.substring(11,16);
+    var bls = getBl(ev);
+
+    // 各日付に順番にコピー
+    var promises = selectedDates.map(function(ds) {
+        var newEv = {
+            summary: ev.summary,
+            description: ev.description || '',
+            colorId: ev.colorId,
+            start: isAllDay ? {date: ds} : {dateTime: ds + 'T' + startTime + ':00', timeZone: 'Asia/Tokyo'},
+            end:   isAllDay ? {date: ds} : {dateTime: ds + 'T' + endTime   + ':00', timeZone: 'Asia/Tokyo'}
+        };
+        return gapi.client.calendar.events.insert({calendarId: 'primary', resource: newEv})
+        .then(function(res) {
+            if (bls.length) {
+                blData[res.result.id] = bls.map(function(b){return {name:b.name,checked:false};});
+            }
+        });
+    });
+
+    Promise.all(promises).then(function() {
+        localStorage.setItem('sc_bl', JSON.stringify(blData));
+        loadEvents();
+        closeCopy();
+        alert(selectedDates.length + '件の日付にコピーしました！');
+    }).catch(function(e) {
+        btn.textContent = 'コピーする'; btn.disabled = false;
+        alert('コピーに失敗しました: ' + (e.result&&e.result.error ? e.result.error.message : e.message));
+    });
 }
 
 // ===== CAMERA & OCR =====
