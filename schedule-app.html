@@ -607,6 +607,7 @@ function closeDet() { document.getElementById('detModal').style.display = 'none'
 function openEdit() {
     var ev = events.find(function(e){return e.id===currentEvId;});
     if (!ev) return;
+    var evId = currentEvId; // closeDet()でリセットされる前に保存
     closeDet();
     openAdd();
 
@@ -631,10 +632,10 @@ function openEdit() {
     var noteMatch = (ev.description||'').match(/📝 (.+)/);
     if (noteMatch) document.getElementById('evNote').value = noteMatch[1];
 
-    // ボタンを「更新する」に変更
+    // ボタンを「更新する」に変更（保存しておいたevIdを使う）
     var btn = document.getElementById('saveBtn');
     btn.textContent = '更新する';
-    btn.setAttribute('data-edit-id', currentEvId);
+    btn.setAttribute('data-edit-id', evId);
 }
 
 function deleteEv() {
