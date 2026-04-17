@@ -136,6 +136,15 @@
             <div id="memberSettings"></div>
         </div>
         <div class="card">
+            <h3 style="font-size:15px;font-weight:700;margin-bottom:4px">&#127890; 持ち物プリセット管理</h3>
+            <p style="font-size:12px;color:var(--text2);margin-bottom:12px">予定追加時にワンタップで選べる持ち物を登録できます</p>
+            <div class="row" style="margin-bottom:10px">
+                <input type="text" id="presetInput" placeholder="持ち物を入力（例：水筒）" style="padding:8px 12px;border:1px solid var(--border);border-radius:8px;font-size:14px;font-family:inherit;outline:none;flex:1" onkeypress="if(event.key==='Enter'){event.preventDefault();addPreset()}">
+                <button class="ibt" onclick="addPreset()">&#65291;</button>
+            </div>
+            <div id="presetList" style="display:flex;flex-wrap:wrap;gap:6px"></div>
+        </div>
+        <div class="card">
             <h3 style="font-size:15px;font-weight:700;margin-bottom:14px">&#128197; 接続状態</h3>
             <div class="srow"><span>Googleカレンダー</span><span id="calStatus" style="color:var(--text2)">未接続</span></div>
         </div>
@@ -168,6 +177,8 @@
             </div>
             <div class="fg">
                 <label>持ち物（Enterで追加）</label>
+                <!-- プリセット選択 -->
+                <div id="blPresets" style="display:flex;flex-wrap:wrap;gap:4px;margin-bottom:8px"></div>
                 <div class="row" style="margin-bottom:8px">
                     <input type="text" id="blInput" placeholder="例：水筒、弁当、上履き..." onkeypress="if(event.key==='Enter'){event.preventDefault();addBl()}">
                     <button class="ibt" onclick="addBl()">&#65291;</button>
@@ -457,6 +468,7 @@ function initUI() {
     renderLegend();
     renderMemberCbs();
     renderMemberSettings();
+    renderPresetSettings();
     renderCal();
     updateTodayTitle();
     setToday();
@@ -654,7 +666,7 @@ function deleteEv() {
 
 // ===== ADD MODAL =====
 function openAdd() {
-    pendingBl = []; renderBlTags();
+    pendingBl = []; renderBlTags(); renderBlPresets();
     document.getElementById('evTitle').value = '';
     document.getElementById('evNote').value = '';
     document.getElementById('evStart').value = '';
@@ -746,16 +758,72 @@ function updateEvToApi(evId, data) {
 }
 
 // ===== BELONGINGS =====
+var presets = JSON.parse(localStorage.getItem('sc_presets') || 'null') || [
+    '水筒','弁当','上履き','体操服','ハンカチ','ティッシュ','ランドセル',
+    '教科書','ノート','筆記用具','連絡帳','給食袋','帽子','傘','お薬'
+];
+
 function addBl() {
     var inp = document.getElementById('blInput');
     var vals = inp.value.trim().split(/[、,\s]+/).filter(Boolean);
     pendingBl = pendingBl.concat(vals);
-    inp.value = ''; renderBlTags();
+    inp.value = ''; renderBlTags(); renderBlPresets();
 }
-function rmBl(i) { pendingBl.splice(i,1); renderBlTags(); }
+function rmBl(i) { pendingBl.splice(i,1); renderBlTags(); renderBlPresets(); }
 function renderBlTags() {
     document.getElementById('blTags').innerHTML = pendingBl.map(function(b,i) {
         return '<span class="btag">' + b + '<button onclick="rmBl(' + i + ')">&#10005;</button></span>';
+    }).join('');
+}
+
+function renderBlPresets() {
+    var el = document.getElementById('blPresets');
+    if (!el) return;
+    el.innerHTML = presets.map(function(p) {
+        var selected = pendingBl.indexOf(p) >= 0;
+        var style = selected
+            ? 'background:#1976D2;color:white;border:2px solid #1976D2;'
+            : 'background:white;color:var(--text);border:2px solid var(--border);';
+        return '<button onclick="togglePresetBl(\'' + p.replace(/'/g,"\\'") + '\')" style="' + style + 'padding:5px 10px;border-radius:16px;font-size:12px;cursor:pointer;font-family:inherit">' +
+            (selected ? '✓ ' : '') + p + '</button>';
+    }).join('');
+}
+
+function togglePresetBl(name) {
+    var idx = pendingBl.indexOf(name);
+    if (idx >= 0) pendingBl.splice(idx, 1);
+    else pendingBl.push(name);
+    renderBlTags(); renderBlPresets();
+}
+
+// プリセット管理（設定タブ）
+function addPreset() {
+    var inp = document.getElementById('presetInput');
+    var vals = inp.value.trim().split(/[、,\s]+/).filter(Boolean);
+    vals.forEach(function(v) {
+        if (presets.indexOf(v) < 0) presets.push(v);
+    });
+    inp.value = '';
+    localStorage.setItem('sc_presets', JSON.stringify(presets));
+    renderPresetSettings();
+}
+
+function removePreset(i) {
+    presets.splice(i, 1);
+    localStorage.setItem('sc_presets', JSON.stringify(presets));
+    renderPresetSettings();
+}
+
+function renderPresetSettings() {
+    var el = document.getElementById('presetList');
+    if (!el) return;
+    if (presets.length === 0) {
+        el.innerHTML = '<p style="font-size:13px;color:var(--text2)">まだ登録されていません</p>';
+        return;
+    }
+    el.innerHTML = presets.map(function(p, i) {
+        return '<span style="display:inline-flex;align-items:center;gap:4px;background:#F5F5F5;border:1px solid var(--border);border-radius:16px;padding:5px 10px;font-size:13px">' +
+            p + '<button onclick="removePreset(' + i + ')" style="background:none;border:none;cursor:pointer;color:#F44336;font-size:13px;padding:0;line-height:1">&#10005;</button></span>';
     }).join('');
 }
 
