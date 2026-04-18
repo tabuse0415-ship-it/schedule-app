@@ -44,6 +44,8 @@
         .bl-item input { width: 18px; height: 18px; cursor: pointer; flex-shrink: 0; }
         .bl-item.checked label { text-decoration: line-through; color: var(--text2); }
         .fab { position: fixed; bottom: 24px; right: 24px; width: 56px; height: 56px; background: var(--primary); color: white; border: none; border-radius: 50%; font-size: 28px; cursor: pointer; box-shadow: 0 4px 12px rgba(25,118,210,0.4); z-index: 200; display: flex; align-items: center; justify-content: center; }
+        .fab-voice { right: 92px; font-size: 22px; background: #00897B; box-shadow: 0 4px 12px rgba(0,137,123,0.4); }
+        .fab-voice.rec { background: #F44336; box-shadow: 0 4px 12px rgba(244,67,54,0.4); animation: pulse 1s infinite; }
         .overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.5); display: flex; align-items: center; justify-content: center; z-index: 300; padding: 12px; }
         .modal { background: white; border-radius: 16px; width: 100%; max-width: 480px; max-height: 92vh; overflow-y: auto; }
         .mh { padding: 16px 20px; border-bottom: 1px solid var(--border); display: flex; align-items: center; justify-content: space-between; position: sticky; top: 0; background: white; }
@@ -74,7 +76,7 @@
         .dow-btn { flex:1; padding:8px 2px; border-radius:8px; border:2px solid var(--border); background:white; cursor:pointer; font-size:13px; font-weight:700; font-family:inherit; transition:all 0.15s; }
         .dow-btn.selected { background:var(--primary); color:white !important; border-color:var(--primary) !important; }
         .srow { display: flex; align-items: center; justify-content: space-between; padding: 10px 0; border-bottom: 1px solid var(--border); }
-        .srow:last-child { border-bottom: none; }
+        .srow:lmst-child { border-bottom: none; }
         .mni { width: 110px; padding: 6px 10px; border: 1px solid var(--border); border-radius: 6px; font-size: 14px; font-family: inherit; }
         .sp { text-align: center; padding: 48px 20px; }
         .sp h2 { font-size: 20px; margin-bottom: 10px; }
@@ -153,6 +155,7 @@
     </div>
 </div>
 
+<button id="voiceFab" class="fab fab-voice" onclick="openAddAndVoice()">&#127897;</button>
 <button class="fab" onclick="openAdd()">&#65291;</button>
 
 <!-- 予定追加モーダル -->
@@ -239,7 +242,7 @@
     <div class="modal" style="max-width:420px">
         <div class="mh"><h3>&#128203; 複数の日付にコピー</h3><button class="mc" onclick="closeCopy()">&#10005;</button></div>
         <div class="mb">
-            <p style="font-size:13px;color:var(--text2);margin-bottom:12px">コピーしたい日付をタップして選択してください（複数選択可）</p>
+            <p style="font-size:13px;color:var(--text2);margin-bottom:12px">コピーしたい日付をタップして選択してくださえ（複数選択可）</p>
 
             <!-- 月ナビゲーション -->
             <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
@@ -306,7 +309,7 @@
                 </div>
             </div>
 
-            <!-- エラー -->
+            <!-- エラヸ -->
             <div id="camError" style="display:none;text-align:center;padding:20px">
                 <div style="font-size:36px;margin-bottom:10px">&#128532;</div>
                 <p id="camErrMsg" style="font-size:14px;color:#F44336;margin-bottom:12px"></p>
@@ -386,7 +389,7 @@ function tryAutoLogin() {
 
 // ===== AUTH =====
 function handleSignIn() {
-    if (!tokenClient) { alert('しばらくお待ちください（初期化中）'); return; }
+    if (!tokenClient) { alert('しばらくえ待ちくださえ（初期化中）'); return; }
     tokenClient.requestAccessToken({ prompt: '' });
 }
 
@@ -858,6 +861,10 @@ function renderPresetSettings() {
 
 // ===== VOICE =====
 function toggleVoice() { isRec ? stopRec() : startRec(); }
+function openAddAndVoice() {
+    openAdd();
+    setTimeout(function() { startRec(); }, 350);
+}
 function startRec() {
     var SR = window.SpeechRecognition || window.webkitSpeechRecognition;
     if (!SR) { alert('音声入力はChromeでご利用ください'); return; }
@@ -868,11 +875,15 @@ function startRec() {
     recog.start(); isRec = true;
     var btn = document.getElementById('voiceBtn');
     btn.classList.add('rec'); btn.innerHTML = '&#9209;';
+    var fab = document.getElementById('voiceFab');
+    if (fab) { fab.classList.add('rec'); fab.innerHTML = '&#9209;'; }
 }
 function stopRec() {
     if (recog) { recog.stop(); recog = null; } isRec = false;
     var btn = document.getElementById('voiceBtn');
     if (btn) { btn.classList.remove('rec'); btn.innerHTML = '&#127897;'; }
+    var fab = document.getElementById('voiceFab');
+    if (fab) { fab.classList.remove('rec'); fab.innerHTML = '&#127897;'; }
 }
 
 // ===== 繰り返し設定 =====
@@ -1196,21 +1207,4 @@ function fmtD(d) { return d.getFullYear()+'-'+pad(d.getMonth()+1)+'-'+pad(d.getD
 function pad(n) { return String(n).padStart(2,'0'); }
 function setToday() { document.getElementById('evDate').value = fmtD(new Date()); }
 function updateTodayTitle() {
-    var d=new Date(), days=['日','月','火','水','木','金','土'];
-    document.getElementById('todayTitle').textContent = (d.getMonth()+1)+'月'+d.getDate()+'日（'+days[d.getDay()]+'）の予定';
-}
-function fmtT(ev) {
-    if (ev.start.date) return '終日';
-    var s=new Date(ev.start.dateTime), e=new Date(ev.end.dateTime);
-    return pad(s.getHours())+':'+pad(s.getMinutes())+' ～ '+pad(e.getHours())+':'+pad(e.getMinutes());
-}
-
-window.addEventListener('load', initUI);
-</script>
-
-<!-- Google API は inline script の後に読み込む -->
-<script src="https://apis.google.com/js/api.js" onload="gapiLoaded()"></script>
-<script src="https://accounts.google.com/gsi/client" onload="gisLoaded()"></script>
-
-</body>
-</html>
+    var d=new Date(), days=['日','月','火','水','木','金
