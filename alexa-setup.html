@@ -1,0 +1,132 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Alexa連携 セットアップガイド</title>
+<style>
+body { font-family: sans-serif; max-width: 780px; margin: 0 auto; padding: 20px; background: #f5f5f5; color: #333; }
+h1 { font-size: 20px; color: #1565C0; border-bottom: 2px solid #1565C0; padding-bottom: 8px; }
+h2 { font-size: 16px; color: #333; margin-top: 28px; background: #E3F2FD; padding: 8px 12px; border-radius: 6px; border-left: 4px solid #1565C0; }
+.step { background: white; border-radius: 10px; padding: 16px 20px; margin-bottom: 12px; box-shadow: 0 1px 4px rgba(0,0,0,0.1); }
+.step-num { display: inline-block; background: #1565C0; color: white; width: 28px; height: 28px; border-radius: 50%; text-align: center; line-height: 28px; font-weight: 700; margin-right: 8px; font-size: 14px; }
+code { background: #F5F5F5; padding: 2px 6px; border-radius: 4px; font-family: monospace; font-size: 13px; color: #C62828; }
+pre { background: #1E1E1E; color: #D4D4D4; padding: 14px; border-radius: 8px; font-size: 13px; overflow-x: auto; line-height: 1.6; }
+.badge { display: inline-block; padding: 2px 8px; border-radius: 12px; font-size: 11px; font-weight: 700; }
+.badge-done { background: #E8F5E9; color: #2E7D32; }
+.badge-need { background: #FFF3E0; color: #E65100; }
+.talk { background: #E8F5E9; border: 1px solid #A5D6A7; border-radius: 8px; padding: 10px 14px; margin: 6px 0; font-size: 14px; }
+.talk::before { content: "💬 "; }
+table { width: 100%; border-collapse: collapse; font-size: 13px; }
+th { background: #1565C0; color: white; padding: 8px; text-align: left; }
+td { padding: 8px; border-bottom: 1px solid #eee; }
+tr:nth-child(even) { background: #F5F5F5; }
+.warn { background: #FFF3E0; border: 1px solid #FFB74D; border-radius: 8px; padding: 10px 14px; font-size: 13px; margin: 8px 0; }
+</style>
+</head>
+<body>
+
+<h1>🔗 Alexa × 家族スケジュール セットアップガイド</h1>
+
+<div class="step" style="background:#E3F2FD">
+<strong>全体の流れ</strong><br>
+<span style="font-size:13px;line-height:2">
+① alexa-server.ps1 を起動<br>
+② ngrok でHTTPS公開<br>
+③ Alexaスキルを作成・設定<br>
+④ アプリからトークンを送信<br>
+⑤ 完成！
+</span>
+</div>
+
+<!-- STEP 1 -->
+<h2>STEP 1 ｜ alexa-server.ps1 を起動する</h2>
+<div class="step">
+  <div><span class="step-num">1</span>PowerShellを<strong>管理者権限</strong>で開く</div>
+  <pre>Start-Process powershell -Verb RunAs</pre>
+  <div style="margin-top:10px"><span class="step-num">2</span>alexa-server.ps1 を実行する</div>
+  <pre>cd C:\Users\tabus\schedule-app
+.\alexa-server.ps1</pre>
+  <div style="margin-top:10px;font-size:13px;color:#555">✅ 起動成功メッセージが表示されたらOK</div>
+</div>
+
+<!-- STEP 2 -->
+<h2>STEP 2 ｜ ngrok でHTTPS公開する</h2>
+<div class="step">
+  <div><span class="step-num">1</span><strong>別のPowerShell</strong>（管理者不要）で実行</div>
+  <pre>ngrok http 8082</pre>
+  <div style="margin-top:10px"><span class="step-num">2</span>表示されるURLをメモ</div>
+  <pre style="color:#4FC3F7">Forwarding  https://xxxx-xx-xx.ngrok-free.app → http://localhost:8082</pre>
+  <div style="margin-top:8px;font-size:13px">⚠️ ngrokを再起動するたびURLが変わります。変わったらAlexaスキルのエンドポイントURLも変更してください</div>
+</div>
+
+<!-- STEP 3 -->
+<h2>STEP 3 ｜ Alexaスキルを作成する</h2>
+<div class="step">
+  <div><span class="step-num">1</span><a href="https://developer.amazon.com/alexa/console/ask" target="_blank">Alexa Developer Console</a> を開く（Amazonアカウントでログイン）</div>
+  <div style="margin-top:10px"><span class="step-num">2</span>「スキルの作成」をクリック</div>
+  <div style="margin-top:10px"><span class="step-num">3</span>以下の設定で作成</div>
+  <table style="margin-top:8px">
+    <tr><th>項目</th><th>設定値</th></tr>
+    <tr><td>スキル名</td><td>家族スケジュール</td></tr>
+    <tr><td>言語</td><td>日本語（日本）</td></tr>
+    <tr><td>モデル</td><td>カスタム</td></tr>
+    <tr><td>ホスティング</td><td>ユーザー独自のプロビジョニング</td></tr>
+  </table>
+</div>
+<div class="step">
+  <div><span class="step-num">4</span>「JSONエディター」を開いて <code>alexa-skill.json</code> の内容を貼り付けて保存・ビルド</div>
+  <div style="margin-top:10px"><span class="step-num">5</span>「エンドポイント」を開いて、ngrokのURLを設定</div>
+  <pre>https://xxxx-xx-xx.ngrok-free.app/alexa</pre>
+  <div style="margin-top:10px"><span class="step-num">6</span>「アクセス権限」で <strong>リマインダー</strong> をONにする（Alexa通知に必要）</div>
+</div>
+
+<!-- STEP 4 -->
+<h2>STEP 4 ｜ アプリからトークンを送信する</h2>
+<div class="step">
+  <div><span class="step-num">1</span>スケジュールアプリを開いてGoogleログインする</div>
+  <div style="margin-top:10px"><span class="step-num">2</span>設定タブ → <strong>Alexa連携</strong> → 「Googleトークンを送信」ボタンを押す</div>
+  <div style="margin-top:10px"><span class="step-num">3</span>「✅ 送信済み」になればOK</div>
+  <div class="warn">⚠️ Googleトークンは1時間で期限が切れます。アプリを再ログインしたら再度「送信」を押してください。</div>
+</div>
+
+<!-- STEP 5 -->
+<h2>STEP 5 ｜ 動作確認</h2>
+<div class="step">
+  <div style="margin-bottom:10px">Alexaに話しかけてみましょう：</div>
+  <div class="talk">アレクサ、家族スケジュールを開いて</div>
+  <div class="talk">5月3日の10時からイチゴ狩りを登録して</div>
+  <div class="talk">明日の予定は？</div>
+  <div class="talk">明日の持ち物は？</div>
+</div>
+
+<!-- 話しかけ方一覧 -->
+<h2>話しかけ方一覧</h2>
+<table>
+  <tr><th>やりたいこと</th><th>Alexaへの話しかけ方</th></tr>
+  <tr><td>スキルを開く</td><td>「アレクサ、家族スケジュールを開いて」</td></tr>
+  <tr><td>予定を登録</td><td>「5月3日の10時からイチゴ狩りを登録して」</td></tr>
+  <tr><td>終日予定を登録</td><td>「5月5日に遠足を追加して」</td></tr>
+  <tr><td>今日の予定を確認</td><td>「今日の予定は？」</td></tr>
+  <tr><td>明日の予定を確認</td><td>「明日の予定を教えて」</td></tr>
+  <tr><td>特定日の予定</td><td>「5月3日の予定は？」</td></tr>
+  <tr><td>持ち物を確認</td><td>「明日の持ち物は？」</td></tr>
+  <tr><td>ヘルプ</td><td>「ヘルプ」</td></tr>
+</table>
+
+<!-- トラブルシューティング -->
+<h2>トラブルシューティング</h2>
+<div class="step">
+  <table>
+    <tr><th>症状</th><th>原因と対処</th></tr>
+    <tr><td>サーバーに繋がらない</td><td>alexa-server.ps1 を管理者権限で実行しているか確認</td></tr>
+    <tr><td>「トークンが必要」と言われる</td><td>アプリの設定→Alexa連携→トークンを送信</td></tr>
+    <tr><td>「登録に失敗」と言われる</td><td>Googleトークンの期限切れ。再ログインして再送信</td></tr>
+    <tr><td>ngrokが繋がらない</td><td>ngrok http 8082 を再実行してURLを更新</td></tr>
+    <tr><td>日本語が認識されない</td><td>スキルの言語設定が「日本語（日本）」か確認</td></tr>
+    <tr><td>リマインダーが届かない</td><td>Alexaアプリ→スキル→「家族スケジュール」→権限→リマインダーをON</td></tr>
+  </table>
+</div>
+
+</body>
+</html>

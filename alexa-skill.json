@@ -1,0 +1,74 @@
+{
+  "interactionModel": {
+    "languageModel": {
+      "invocationName": "家族スケジュール",
+      "intents": [
+        {
+          "name": "AddEventIntent",
+          "slots": [
+            { "name": "date",      "type": "AMAZON.DATE" },
+            { "name": "startTime", "type": "AMAZON.TIME" },
+            { "name": "title",     "type": "AMAZON.SearchQuery" }
+          ],
+          "samples": [
+            "{date} {startTime}から {title} を登録して",
+            "{date} {startTime}から {title}",
+            "{date} {startTime} {title} を追加して",
+            "{date}に {title} を追加して",
+            "{date}に {title} を登録して",
+            "{startTime}から {title} を登録して",
+            "{title} を {date} {startTime}から登録して",
+            "{title} を登録して",
+            "{date} {title}"
+          ]
+        },
+        {
+          "name": "GetScheduleIntent",
+          "slots": [
+            { "name": "date", "type": "AMAZON.DATE" }
+          ],
+          "samples": [
+            "{date}の予定は",
+            "{date}の予定を教えて",
+            "{date}は何がある",
+            "{date}の予定を確認して",
+            "{date}のスケジュールは",
+            "明日の予定は",
+            "今日の予定は",
+            "今週の予定は",
+            "予定を教えて",
+            "スケジュールを教えて"
+          ]
+        },
+        {
+          "name": "GetBelongingsIntent",
+          "slots": [
+            { "name": "date", "type": "AMAZON.DATE" }
+          ],
+          "samples": [
+            "{date}の持ち物は",
+            "{date}の持ち物を教えて",
+            "{date}に何を持っていく",
+            "{date}の持ち物を確認して",
+            "明日の持ち物は",
+            "今日の持ち物は",
+            "持ち物を教えて",
+            "何を持っていく"
+          ]
+        },
+        {
+          "name": "AMAZON.HelpIntent",
+          "samples": []
+        },
+        {
+          "name": "AMAZON.CancelIntent",
+          "samples": []
+        },
+        {
+          "name": "AMAZON.StopIntent",
+          "samples": []
+        }
+      ]
+    }
+  }
+}

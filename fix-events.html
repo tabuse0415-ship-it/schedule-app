@@ -1,0 +1,210 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<title>イベント一括修正ツール</title>
+<style>
+body { font-family: sans-serif; max-width: 900px; margin: 0 auto; padding: 20px; background: #f5f5f5; }
+h2 { color: #333; }
+button { padding: 10px 20px; font-size: 15px; border-radius: 8px; border: none; cursor: pointer; margin: 6px 4px; }
+#loginBtn  { background: #4285F4; color: white; }
+#fetchBtn  { background: #34A853; color: white; }
+#fixBtn        { background: #EA4335; color: white; display:none; }
+#notifyOnlyBtn { background: #FF6D00; color: white; display:none; }
+#log { background: white; border-radius: 8px; padding: 16px; margin-top: 16px; max-height: 500px; overflow-y: auto; font-size: 13px; line-height: 1.8; }
+.ok   { color: #34A853; }
+.warn { color: #EA4335; }
+.info { color: #4285F4; }
+#summary { background:#fff3cd; border-radius:8px; padding:12px; margin-top:12px; display:none; }
+</style>
+</head>
+<body>
+<h2>🔧 イベント一括修正ツール</h2>
+<p>メンバー設定の修正 ＋ 通知設定の削除を一括で行います（2026年9月〜2027年3月）</p>
+
+<button id="loginBtn" onclick="login()">① Googleログイン</button>
+<button id="fetchBtn" onclick="fetchAndPreview()" disabled>② イベント確認</button>
+<button id="fixBtn" onclick="fixAll()">③ メンバー修正＋通知削除</button>
+<button id="notifyOnlyBtn" onclick="notifyOnly()">③ 通知削除のみ</button>
+
+<div id="summary"></div>
+<div id="log">ログインして開始してください...</div>
+
+<script src="https://apis.google.com/js/api.js"></script>
+<script src="https://accounts.google.com/gsi/client"></script>
+<script>
+var CLIENT_ID = '55276251258-eoumi828hrut2k9jp6b05iia31q4gloq.apps.googleusercontent.com';
+var SCOPES = 'https://www.googleapis.com/auth/calendar';
+var accessToken = null;
+var eventsToFix = [];
+
+// メンバー割り当てルール（CLAUDE.mdより）
+// 順序重要：より具体的なキーワードを先に
+var MEMBER_RULES = [
+  { name:'トト',          colorId:'7', keywords:['金井南運動会','金島地区運動会','芸能発表','どんど焼き','上毛かるた','金井南町','松葉取り','有紀さん','中学生記念品','ごみ回収','総会'] },
+  { name:'家族',          colorId:'2', keywords:['弁当持参','白ばら運動会','親子運動遊び','園外保育','わかくさ清掃','保育参観','ひょうげん発表会','運動会'] },
+  { name:'ユメ',          colorId:'5', keywords:['3歳健診'] },
+  { name:'コーラル・ピンク', colorId:'6', keywords:['1歳半健診'] },
+  { name:'リコ',          colorId:'4', keywords:['マラソン大会','始業式','終業式','修了式'] },
+  { name:'かーちゃん',    colorId:'3', keywords:['学習参観'] },
+];
+
+// メンバー名から割り当てルールを検索
+function findMember(title) {
+  for (var i = 0; i < MEMBER_RULES.length; i++) {
+    var rule = MEMBER_RULES[i];
+    for (var j = 0; j < rule.keywords.length; j++) {
+      if (title.indexOf(rule.keywords[j]) >= 0) return rule;
+    }
+  }
+  return null;
+}
+
+function log(msg, cls) {
+  var div = document.getElementById('log');
+  div.innerHTML += '<div class="' + (cls||'') + '">' + msg + '</div>';
+  div.scrollTop = div.scrollHeight;
+}
+
+function login() {
+  gapi.load('client', function() {
+    gapi.client.init({ discoveryDocs: ['https://www.googleapis.com/discovery/v1/apis/calendar/v3/rest'] }).then(function() {
+      var client = google.accounts.oauth2.initTokenClient({
+        client_id: CLIENT_ID, scope: SCOPES,
+        callback: function(resp) {
+          if (resp.error) { log('ログイン失敗: ' + resp.error, 'warn'); return; }
+          accessToken = resp.access_token;
+          gapi.client.setToken({ access_token: accessToken });
+          log('✅ ログイン成功', 'ok');
+          document.getElementById('fetchBtn').disabled = false;
+        }
+      });
+      client.requestAccessToken();
+    });
+  });
+}
+
+function fetchAndPreview() {
+  document.getElementById('log').innerHTML = '';
+  log('イベントを取得中...', 'info');
+  eventsToFix = [];
+
+  gapi.client.calendar.events.list({
+    calendarId: 'primary',
+    timeMin: '2026-04-01T00:00:00+09:00',
+    timeMax: '2027-04-01T00:00:00+09:00',
+    maxResults: 250,
+    singleEvents: true,
+    orderBy: 'startTime'
+  }).then(function(res) {
+    var items = res.result.items || [];
+    log('取得件数: ' + items.length + '件', 'info');
+    log('---', '');
+
+    var noMatch = [];
+    items.forEach(function(ev) {
+      var title = ev.summary || '';
+      var member = findMember(title);
+      var currentDesc = ev.description || '';
+      var newDesc = member ? '👥 ' + member.name + '\n' : '';
+      var hasReminders = ev.reminders && (ev.reminders.useDefault || (ev.reminders.overrides && ev.reminders.overrides.length > 0));
+
+      if (member || hasReminders) {
+        eventsToFix.push({ ev: ev, member: member, newDesc: newDesc });
+        var date = (ev.start.date || ev.start.dateTime || '').substring(0, 10);
+        log('[' + date + '] ' + title + ' → ' + (member ? '👥 ' + member.name : '（メンバー変更なし）') + (hasReminders ? ' 🔔通知削除' : ''), member ? 'ok' : 'info');
+      } else {
+        noMatch.push(title);
+      }
+    });
+
+    if (noMatch.length > 0) {
+      log('---', '');
+      log('⚠️ メンバー未割り当て（変更なし）:', 'warn');
+      noMatch.forEach(function(t) { log('　・' + t, 'warn'); });
+    }
+
+    var summary = document.getElementById('summary');
+    summary.style.display = 'block';
+    summary.innerHTML = '修正対象: <strong>' + eventsToFix.length + '件</strong>　未割り当て: <strong>' + noMatch.length + '件</strong><br>内容を確認して「③ 一括修正を実行」を押してください';
+    document.getElementById('fixBtn').style.display = 'inline-block';
+    document.getElementById('notifyOnlyBtn').style.display = 'inline-block';
+  }).catch(function(e) {
+    log('取得失敗: ' + JSON.stringify(e), 'warn');
+  });
+}
+
+function fixAll() {
+  if (!confirm('修正を実行しますか？（' + eventsToFix.length + '件）')) return;
+  document.getElementById('log').innerHTML = '';
+  document.getElementById('fixBtn').disabled = true;
+  log('修正開始...', 'info');
+
+  var idx = 0;
+  function next() {
+    if (idx >= eventsToFix.length) {
+      log('---', '');
+      log('✅ 全件修正完了！', 'ok');
+      document.getElementById('summary').innerHTML = '✅ 修正完了！スケジュールアプリをリロードして確認してください。';
+      return;
+    }
+    var item = eventsToFix[idx++];
+    var ev = item.ev;
+    var patch = {
+      reminders: { useDefault: false, overrides: [] }
+    };
+    if (item.member) {
+      patch.description = item.newDesc;
+      patch.colorId = item.member.colorId;
+    }
+
+    gapi.client.calendar.events.patch({
+      calendarId: 'primary',
+      eventId: ev.id,
+      resource: patch
+    }).then(function() {
+      var date = (ev.start.date || ev.start.dateTime || '').substring(0, 10);
+      log('[' + date + '] ✅ ' + (ev.summary || '') + (item.member ? ' → ' + item.member.name : ' 通知削除のみ'), 'ok');
+      setTimeout(next, 150);
+    }).catch(function(e) {
+      log('[失敗] ' + (ev.summary || '') + ': ' + JSON.stringify(e), 'warn');
+      setTimeout(next, 150);
+    });
+  }
+  next();
+}
+
+function notifyOnly() {
+  if (!confirm('全イベントの通知設定を削除しますか？（' + eventsToFix.length + '件対象）')) return;
+  document.getElementById('log').innerHTML = '';
+  document.getElementById('notifyOnlyBtn').disabled = true;
+  log('通知削除開始...', 'info');
+
+  var allEvents = eventsToFix.map(function(item) { return item.ev; });
+  var idx = 0;
+  function next() {
+    if (idx >= allEvents.length) {
+      log('---', '');
+      log('✅ 全件の通知削除完了！', 'ok');
+      document.getElementById('summary').innerHTML = '✅ 通知削除完了！';
+      return;
+    }
+    var ev = allEvents[idx++];
+    gapi.client.calendar.events.patch({
+      calendarId: 'primary',
+      eventId: ev.id,
+      resource: { reminders: { useDefault: false, overrides: [] } }
+    }).then(function() {
+      var date = (ev.start.date || ev.start.dateTime || '').substring(0, 10);
+      log('[' + date + '] ✅ ' + (ev.summary || ''), 'ok');
+      setTimeout(next, 150);
+    }).catch(function(e) {
+      log('[失敗] ' + (ev.summary || '') + ': ' + JSON.stringify(e), 'warn');
+      setTimeout(next, 150);
+    });
+  }
+  next();
+}
+</script>
+</body>
+</html>

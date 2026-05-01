@@ -1,0 +1,4 @@
+﻿# 自動生成ファイルを除外
+alexa-token.json
+*.lock
+
