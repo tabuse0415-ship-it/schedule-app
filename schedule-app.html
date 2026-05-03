@@ -685,7 +685,7 @@ function setToday() {
 }
 
 // ===== ALEXA 連携 =====
-var ALEXA_SERVER = 'http://localhost:8082';
+var ALEXA_SERVER = 'https://persevere-denial-repurpose.ngrok-free.dev';
 
 function checkAlexaServer() {
     fetch(ALEXA_SERVER + '/health', { signal: AbortSignal.timeout(2000) })
