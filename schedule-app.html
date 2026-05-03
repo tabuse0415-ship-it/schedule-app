@@ -1559,7 +1559,7 @@ function closeCam() {
 function analyzeWithGemini(base64) {
     var prompt = '画像を詳しく読み取り、スケジュール情報を抽出してください。\n\n対象：学校のお便り・行事予定表・習い事の案内・病院の予約票・イベントチラシなど\n\n抽出ルール：\n- タイトル：行事名・予定名（簡潔に）\n- 日付：年が省略されていれば2026年または2027年で推測\n- 時刻：「○時○分」「○:○○」形式を読み取る\n- 持ち物：「持ち物」「準備するもの」「必要なもの」欄を読み取る\n- メモ：集合場所・注意事項など重要な補足情報\n\n必ず以下のJSON形式のみで回答（説明文・コードブロック不要）:\n{"title":"予定名","date":"YYYY-MM-DD","startTime":"HH:MM","endTime":"HH:MM","belongings":["持ち物1","持ち物2"],"notes":"メモ"}\n\n情報がない項目はnullにしてください。';
 
-    fetch('https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=' + GEMINI_KEY, {
+    fetch('https://generativelanguage.googleapis.com/v1/models/gemini-1.5-flash:generateContent?key=' + GEMINI_KEY, {
         method: 'POST',
         headers: {'Content-Type': 'application/json'},
         body: JSON.stringify({
