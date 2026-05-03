@@ -1139,7 +1139,7 @@ function renderPresetSettings() {
 function toggleVoice() { isRec ? stopRec() : startRec(); }
 function openAddAndVoice() {
     openAdd();
-    setTimeout(function() { startRec(); }, 700);
+    startRec();
 }
 function startRec() {
     var SR = window.SpeechRecognition || window.webkitSpeechRecognition;
