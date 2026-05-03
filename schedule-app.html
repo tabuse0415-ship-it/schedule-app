@@ -1139,24 +1139,22 @@ function renderPresetSettings() {
 function toggleVoice() { isRec ? stopRec() : startRec(); }
 function openAddAndVoice() {
     openAdd();
-    setTimeout(function() { startRec(); }, 350);
+    setTimeout(function() { startRec(); }, 700);
 }
 function startRec() {
     var SR = window.SpeechRecognition || window.webkitSpeechRecognition;
     if (!SR) { alert('音声入力はChromeでご利用ください（HTTPS接続が必要です）'); return; }
     recog = new SR();
-    recog.lang = 'ja-JP'; recog.continuous = false; recog.interimResults = true;
+    recog.lang = 'ja-JP'; recog.continuous = false; recog.interimResults = false;
+    recog.maxAlternatives = 1;
     recog.onresult = function(e) {
         var transcript = '';
         for (var i = 0; i < e.results.length; i++) {
             transcript = e.results[i][0].transcript;
         }
-        // 確定結果のみ解析
-        if (e.results[e.results.length-1].isFinal) {
-            var parsed = parseVoiceInput(transcript);
-            applyVoiceParsed(parsed, transcript);
-            stopRec();
-        }
+        var parsed = parseVoiceInput(transcript);
+        applyVoiceParsed(parsed, transcript);
+        stopRec();
     };
     recog.onerror = function(e) {
         if (e.error !== 'no-speech' && e.error !== 'aborted') alert('音声認識エラー: ' + e.error);
