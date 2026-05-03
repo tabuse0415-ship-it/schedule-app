@@ -1191,6 +1191,10 @@ function fmtDate(d){ return d.getFullYear()+'-'+pad2(d.getMonth()+1)+'-'+pad2(d.
 
 function parseVoiceInput(text) {
     var r = { title:'', date:'', startTime:'', endTime:'' };
+    // 先頭の「アレクサ」「OK Google」などウェイクワードを除去
+    text = text.replace(/^(アレクサ|alexa|OK\s*google|オーケーグーグル)\s*/i, '');
+    // 末尾・中間の指示ワードを除去
+    text = text.replace(/を?(予定を?|スケジュールを?)?(入れて|追加して|登録して|追加|登録|入力して)/g, '');
     var s = kanjiToNum(text);
     var now = new Date();
     var year = now.getFullYear();
