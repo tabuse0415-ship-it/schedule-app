@@ -610,6 +610,7 @@ function evColor(ev) {
 
 // ===== UI RENDER =====
 function initUI() {
+    cleanupOldPhotos();
     renderLegend();
     renderMemberCbs();
     renderMemberSettings();
@@ -945,10 +946,35 @@ function closeDet() { document.getElementById('detModal').style.display = 'none'
 
 // ---- 写真添付機能 ----
 function getEvPhotos(evId) {
-    try { return JSON.parse(localStorage.getItem('ev_photos_' + evId) || '[]'); } catch(e) { return []; }
+    try {
+        var raw = JSON.parse(localStorage.getItem('ev_photos_' + evId) || 'null');
+        if (!raw) return [];
+        if (Array.isArray(raw)) return raw; // 旧フォーマット互換
+        return raw.photos || [];
+    } catch(e) { return []; }
 }
 function saveEvPhotos(evId, photos) {
-    localStorage.setItem('ev_photos_' + evId, JSON.stringify(photos));
+    var ev = events.find(function(e){return e.id===evId;});
+    var date = ev ? (ev.start.date || (ev.start.dateTime ? ev.start.dateTime.substring(0,10) : null)) : null;
+    localStorage.setItem('ev_photos_' + evId, JSON.stringify({ date: date, photos: photos }));
+}
+function cleanupOldPhotos() {
+    var cutoff = new Date();
+    cutoff.setMonth(cutoff.getMonth() - 3);
+    var keysToDelete = [];
+    for (var i = 0; i < localStorage.length; i++) {
+        var key = localStorage.key(i);
+        if (key && key.indexOf('ev_photos_') === 0) {
+            try {
+                var raw = JSON.parse(localStorage.getItem(key));
+                if (raw && !Array.isArray(raw) && raw.date) {
+                    if (new Date(raw.date) < cutoff) keysToDelete.push(key);
+                }
+            } catch(e) {}
+        }
+    }
+    keysToDelete.forEach(function(k){ localStorage.removeItem(k); });
+    if (keysToDelete.length > 0) console.log('自動削除: ' + keysToDelete.length + '件の古い写真データ');
 }
 function openEvPhotoInput() {
     var photos = getEvPhotos(currentEvId);
