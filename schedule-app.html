@@ -49,6 +49,7 @@
         .fab { position: fixed; bottom: 24px; right: 24px; width: 56px; height: 56px; background: var(--primary); color: white; border: none; border-radius: 50%; font-size: 28px; cursor: pointer; box-shadow: 0 4px 12px rgba(25,118,210,0.4); z-index: 200; display: flex; align-items: center; justify-content: center; }
         .fab-voice { right: 92px; font-size: 22px; background: #00897B; box-shadow: 0 4px 12px rgba(0,137,123,0.4); }
         .fab-voice.rec { background: #F44336; box-shadow: 0 4px 12px rgba(244,67,54,0.4); animation: pulse 1s infinite; }
+        .fab-cam { right: 160px; font-size: 22px; background: #F57C00; box-shadow: 0 4px 12px rgba(245,124,0,0.4); }
         .overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.5); display: flex; align-items: center; justify-content: center; z-index: 300; padding: 12px; }
         .modal { background: white; border-radius: 16px; width: 100%; max-width: 480px; max-height: 92vh; overflow-y: auto; }
         .mh { padding: 16px 20px; border-bottom: 1px solid var(--border); display: flex; align-items: center; justify-content: space-between; position: sticky; top: 0; background: white; }
@@ -194,6 +195,7 @@
     </div>
 </div>
 
+<button class="fab fab-cam" onclick="openCam()">&#128247;</button>
 <button id="voiceFab" class="fab fab-voice" onclick="openAddAndVoice()">&#127897;</button>
 <button class="fab" onclick="openAdd()">&#65291;</button>
 
@@ -284,12 +286,14 @@
         <div class="mb" id="detBody"></div>
         <div class="mf" style="flex-wrap:wrap;gap:8px">
             <button class="btn-c" onclick="closeDet()">閉じる</button>
+            <button class="btn-s" onclick="openEvPhotoInput()" style="background:#F57C00">&#128247; 写真</button>
             <button class="btn-s" onclick="openCopy()" style="background:#4CAF50">&#128203; コピー</button>
             <button class="btn-s" onclick="openEdit()" style="background:#FF9800">&#9999; 編集</button>
             <button class="btn-s" onclick="deleteEv()" style="background:#F44336">&#128465; 削除</button>
         </div>
     </div>
 </div>
+<input type="file" id="evPhotoInput" accept="image/*" capture="environment" style="display:none" onchange="onEvPhotoSelected(this)">
 
 <!-- コピーモーダル -->
 <div id="copyModal" class="overlay" style="display:none" onclick="if(event.target===this)closeCopy()">
@@ -914,10 +918,86 @@ function showDet(evId) {
     } else {
         html += '<p style="color:var(--text2);font-size:13px">持ち物の登録はありません</p>';
     }
+    // 写真セクション
+    var photos = getEvPhotos(evId);
+    html += '<div style="margin-top:14px">';
+    html += '<div style="font-size:14px;font-weight:700;margin-bottom:8px">&#128247; 写真</div>';
+    if (photos.length > 0) {
+        html += '<div style="display:flex;gap:8px;flex-wrap:wrap;">';
+        photos.forEach(function(src, i) {
+            html += '<div style="position:relative">';
+            html += '<img src="' + src + '" style="width:90px;height:90px;object-fit:cover;border-radius:8px;cursor:pointer" onclick="viewEvPhoto(\'' + evId + '\',' + i + ')">';
+            html += '<button onclick="deleteEvPhoto(\'' + evId + '\',' + i + ')" style="position:absolute;top:2px;right:2px;background:rgba(0,0,0,0.5);color:white;border:none;border-radius:50%;width:20px;height:20px;font-size:11px;cursor:pointer;display:flex;align-items:center;justify-content:center">&#10005;</button>';
+            html += '</div>';
+        });
+        html += '</div>';
+    }
+    if (photos.length < 3) {
+        html += '<div style="font-size:12px;color:var(--text2);margin-top:6px">写真を追加（最大3枚）</div>';
+    } else {
+        html += '<div style="font-size:12px;color:#F44336;margin-top:6px">上限（3枚）に達しています</div>';
+    }
+    html += '</div>';
     document.getElementById('detBody').innerHTML = html;
     document.getElementById('detModal').style.display = 'flex';
 }
 function closeDet() { document.getElementById('detModal').style.display = 'none'; currentEvId = null; }
+
+// ---- 写真添付機能 ----
+function getEvPhotos(evId) {
+    try { return JSON.parse(localStorage.getItem('ev_photos_' + evId) || '[]'); } catch(e) { return []; }
+}
+function saveEvPhotos(evId, photos) {
+    localStorage.setItem('ev_photos_' + evId, JSON.stringify(photos));
+}
+function openEvPhotoInput() {
+    var photos = getEvPhotos(currentEvId);
+    if (photos.length >= 3) { alert('写真は最大3枚まで保存できます。'); return; }
+    document.getElementById('evPhotoInput').click();
+}
+function onEvPhotoSelected(input) {
+    var file = input.files[0];
+    if (!file || !currentEvId) return;
+    var evId = currentEvId;
+    var reader = new FileReader();
+    reader.onload = function(e) {
+        var img = new Image();
+        img.onload = function() {
+            var max = 600;
+            var w = img.width, h = img.height;
+            if (w > max || h > max) {
+                if (w > h) { h = Math.round(h * max / w); w = max; }
+                else { w = Math.round(w * max / h); h = max; }
+            }
+            var cv = document.createElement('canvas');
+            cv.width = w; cv.height = h;
+            cv.getContext('2d').drawImage(img, 0, 0, w, h);
+            var compressed = cv.toDataURL('image/jpeg', 0.8);
+            var photos = getEvPhotos(evId);
+            if (photos.length < 3) {
+                photos.push(compressed);
+                saveEvPhotos(evId, photos);
+            }
+            showDet(evId);
+        };
+        img.src = e.target.result;
+    };
+    reader.readAsDataURL(file);
+    input.value = '';
+}
+function deleteEvPhoto(evId, index) {
+    var photos = getEvPhotos(evId);
+    photos.splice(index, 1);
+    saveEvPhotos(evId, photos);
+    showDet(evId);
+}
+function viewEvPhoto(evId, index) {
+    var photos = getEvPhotos(evId);
+    var src = photos[index];
+    if (!src) return;
+    var w = window.open('', '_blank');
+    w.document.write('<html><body style="margin:0;background:#000;display:flex;align-items:center;justify-content:center;min-height:100vh"><img src="' + src + '" style="max-width:100%;max-height:100vh"></body></html>');
+}
 
 function openEdit() {
     var ev = events.find(function(e){return e.id===currentEvId;});
