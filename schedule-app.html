@@ -363,14 +363,14 @@
 
             <!-- 解析結果 -->
             <div id="camResult" style="display:none">
-                <img id="camPreviewImg" style="width:100%;border-radius:8px;max-height:160px;object-fit:cover;margin-bottom:12px">
-                <div style="background:#E8F5E9;border-radius:8px;padding:12px;margin-bottom:12px">
-                    <p style="font-size:12px;font-weight:700;color:#2E7D32;margin-bottom:8px">&#9989; AIが読み取った内容</p>
+                <img id="camPreviewImg" style="width:100%;border-radius:8px;max-height:140px;object-fit:cover;margin-bottom:10px">
+                <div style="background:#E8F5E9;border-radius:8px;padding:10px;margin-bottom:10px">
+                    <p style="font-size:12px;font-weight:700;color:#2E7D32;margin-bottom:8px">&#9989; AIが読み取った予定（チェックして登録）</p>
                     <div id="ocrFields"></div>
                 </div>
                 <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
                     <button class="btn-c" onclick="closeCam()">キャンセル</button>
-                    <button class="btn-s" onclick="applyOcr()">予定に反映する</button>
+                    <button class="btn-s" onclick="applyOcr()">選択した予定を登録</button>
                 </div>
             </div>
 
@@ -1591,7 +1591,13 @@ function closeCam() {
 }
 
 function analyzeWithGemini(base64) {
-    var prompt = '画像を詳しく読み取り、スケジュール情報を抽出してください。\n\n対象：学校のお便り・行事予定表・習い事の案内・病院の予約票・イベントチラシなど\n\n抽出ルール：\n- タイトル：行事名・予定名（簡潔に）\n- 日付：年が省略されていれば2026年または2027年で推測\n- 時刻：「○時○分」「○:○○」形式を読み取る\n- 持ち物：「持ち物」「準備するもの」「必要なもの」欄を読み取る\n- メモ：集合場所・注意事項など重要な補足情報\n\n必ず以下のJSON形式のみで回答（説明文・コードブロック不要）:\n{"title":"予定名","date":"YYYY-MM-DD","startTime":"HH:MM","endTime":"HH:MM","belongings":["持ち物1","持ち物2"],"notes":"メモ"}\n\n情報がない項目はnullにしてください。';
+    if (!GEMINI_KEY) {
+        document.getElementById('camLoading').style.display = 'none';
+        document.getElementById('camError').style.display = 'block';
+        document.getElementById('camErrMsg').textContent = '設定タブでGemini APIキーを設定してください。';
+        return;
+    }
+    var prompt = '画像を詳しく読み取り、すべてのスケジュール情報を抽出してください。\n\n対象：学校のお便り・行事予定表・習い事の案内・病院の予約票・イベントチラシなど\n\n抽出ルール：\n- 画像内に複数の予定がある場合はすべて抽出する\n- タイトル：行事名・予定名（簡潔に）\n- 日付：年が省略されていれば2026年または2027年で推測\n- 時刻：「○時○分」「○:○○」形式を読み取る\n- 持ち物：「持ち物」「準備するもの」「必要なもの」欄を読み取る\n- メモ：集合場所・注意事項など重要な補足情報\n\n必ず以下のJSON配列形式のみで回答（説明文・コードブロック不要）:\n[{"title":"予定名","date":"YYYY-MM-DD","startTime":"HH:MM","endTime":"HH:MM","belongings":["持ち物1"],"notes":"メモ"}]\n\n予定が1件のみでも配列で返すこと。情報がない項目はnullにしてください。';
 
     fetch('https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=' + GEMINI_KEY, {
         method: 'POST',
@@ -1608,13 +1614,20 @@ function analyzeWithGemini(base64) {
     })
     .then(function(r) { return r.json(); })
     .then(function(data) {
-        // APIエラーチェック
         if (data.error) throw new Error('APIエラー: ' + data.error.message + ' (code:' + data.error.code + ')');
-        if (!data.candidates || !data.candidates[0]) throw new Error('解析結果なし。APIレスポンス: ' + JSON.stringify(data).substring(0,200));
+        if (!data.candidates || !data.candidates[0]) throw new Error('解析結果なし');
         var text = data.candidates[0].content.parts[0].text;
-        var match = text.match(/\{[\s\S]*\}/);
-        if (!match) throw new Error('JSON抽出失敗。AI応答: ' + text.substring(0,100));
-        ocrData = JSON.parse(match[0]);
+        // 配列または単体オブジェクトを抽出
+        var arrMatch = text.match(/\[[\s\S]*\]/);
+        var objMatch = text.match(/\{[\s\S]*\}/);
+        if (arrMatch) {
+            ocrData = JSON.parse(arrMatch[0]);
+            if (!Array.isArray(ocrData)) ocrData = [ocrData];
+        } else if (objMatch) {
+            ocrData = [JSON.parse(objMatch[0])];
+        } else {
+            throw new Error('JSON抽出失敗。AI応答: ' + text.substring(0,100));
+        }
         showOcrResult();
     })
     .catch(function(e) {
@@ -1629,30 +1642,65 @@ function showOcrResult() {
     document.getElementById('camLoading').style.display = 'none';
     document.getElementById('camResult').style.display = 'block';
 
-    var d = ocrData;
+    var list = Array.isArray(ocrData) ? ocrData : [ocrData];
     var html = '';
-    if (d.title)     html += '<div style="margin-bottom:6px"><span style="font-size:11px;color:var(--text2)">タイトル</span><br><strong>' + d.title + '</strong></div>';
-    if (d.date)      html += '<div style="margin-bottom:6px"><span style="font-size:11px;color:var(--text2)">日付</span><br><strong>' + d.date + '</strong></div>';
-    if (d.startTime) html += '<div style="margin-bottom:6px"><span style="font-size:11px;color:var(--text2)">時間</span><br><strong>' + d.startTime + (d.endTime ? ' ～ ' + d.endTime : '') + '</strong></div>';
-    if (d.belongings && d.belongings.length) html += '<div style="margin-bottom:6px"><span style="font-size:11px;color:var(--text2)">持ち物</span><br><strong>' + d.belongings.join('、') + '</strong></div>';
-    if (d.notes)     html += '<div style="margin-bottom:6px"><span style="font-size:11px;color:var(--text2)">メモ</span><br><strong>' + d.notes + '</strong></div>';
+    list.forEach(function(d, i) {
+        var label = (d.title || '（タイトルなし）');
+        var sub = [];
+        if (d.date) sub.push(d.date);
+        if (d.startTime) sub.push(d.startTime + (d.endTime ? '～' + d.endTime : ''));
+        if (d.belongings && d.belongings.length) sub.push('持ち物:' + d.belongings.join('・'));
+        html += '<label style="display:flex;align-items:flex-start;gap:8px;padding:6px 0;border-bottom:1px solid #eee;cursor:pointer">'
+            + '<input type="checkbox" data-idx="' + i + '" checked style="margin-top:3px;width:16px;height:16px;flex-shrink:0">'
+            + '<span><strong style="font-size:13px">' + label + '</strong>'
+            + (sub.length ? '<br><span style="font-size:11px;color:var(--text2)">' + sub.join('　') + '</span>' : '')
+            + (d.notes ? '<br><span style="font-size:11px;color:var(--text2)">📝' + d.notes + '</span>' : '')
+            + '</span></label>';
+    });
     document.getElementById('ocrFields').innerHTML = html || '<p style="color:var(--text2);font-size:13px">情報を読み取れませんでした</p>';
 }
 
 function applyOcr() {
     if (!ocrData) return;
+    var list = Array.isArray(ocrData) ? ocrData : [ocrData];
+    var checks = document.querySelectorAll('#ocrFields input[type=checkbox]');
+    var selected = [];
+    checks.forEach(function(cb) {
+        if (cb.checked) selected.push(list[parseInt(cb.getAttribute('data-idx'))]);
+    });
+    if (selected.length === 0) { alert('予定を選択してください'); return; }
     closeCam();
-    openAdd();
-    var d = ocrData;
-    if (d.title)     document.getElementById('evTitle').value = d.title;
-    if (d.date)      document.getElementById('evDate').value = d.date;
-    if (d.startTime) document.getElementById('evStart').value = d.startTime;
-    if (d.endTime)   document.getElementById('evEnd').value = d.endTime;
-    if (d.notes)     document.getElementById('evNote').value = d.notes;
-    if (d.belongings && d.belongings.length) {
-        pendingBl = d.belongings.slice();
-        renderBlTags();
-    }
+    // 複数件は順次登録
+    var token = accessToken;
+    var year = new Date().getFullYear();
+    var done = 0;
+    selected.forEach(function(d) {
+        var ev = { summary: d.title || '（無題）' };
+        if (d.date) {
+            if (d.startTime) {
+                ev.start = { dateTime: d.date + 'T' + d.startTime + ':00', timeZone: 'Asia/Tokyo' };
+                var et = d.endTime || (function(){ var h=parseInt(d.startTime)+1; return (h<10?'0':'')+h+d.startTime.substring(2); })();
+                ev.end   = { dateTime: d.date + 'T' + et + ':00', timeZone: 'Asia/Tokyo' };
+            } else {
+                ev.start = { date: d.date };
+                ev.end   = { date: d.date };
+            }
+        }
+        if (d.notes) ev.description = d.notes;
+        if (d.belongings && d.belongings.length) ev.description = (ev.description ? ev.description + '\n' : '') + '持ち物：' + d.belongings.join('、');
+        ev.reminders = { useDefault: false, overrides: [{ method: 'popup', minutes: 30 }] };
+        fetch('https://www.googleapis.com/calendar/v3/calendars/primary/events', {
+            method: 'POST',
+            headers: { Authorization: 'Bearer ' + token, 'Content-Type': 'application/json' },
+            body: JSON.stringify(ev)
+        }).then(function() {
+            done++;
+            if (done === selected.length) {
+                alert(selected.length + '件の予定を登録しました！');
+                loadEvents();
+            }
+        }).catch(function(e) { console.error(e); });
+    });
 }
 
 </script>
