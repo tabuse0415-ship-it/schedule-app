@@ -1297,8 +1297,16 @@ function startRec() {
         stopRec();
     };
     recog.onerror = function(e) {
-        if (e.error !== 'no-speech' && e.error !== 'aborted') alert('音声認識エラー: ' + e.error);
-        stopRec();
+        var geminiErrors = ['service-not-allowed', 'network', 'language-not-supported'];
+        if (geminiErrors.indexOf(e.error) !== -1) {
+            stopRec();
+            startGeminiVoiceFallback();
+        } else if (e.error !== 'no-speech' && e.error !== 'aborted') {
+            alert('音声認識エラー: ' + e.error);
+            stopRec();
+        } else {
+            stopRec();
+        }
     };
     recog.onend = stopRec;
     recog.start(); isRec = true;
@@ -1313,6 +1321,77 @@ function stopRec() {
     if (btn) { btn.classList.remove('rec'); btn.innerHTML = '&#127897;'; }
     var fab = document.getElementById('voiceFab');
     if (fab) { fab.classList.remove('rec'); fab.innerHTML = '&#127897;'; }
+}
+function startGeminiVoiceFallback() {
+    if (!GEMINI_KEY) {
+        alert('音声認識サービスが利用できません。\n設定タブでGemini APIキーを設定するとGemini音声認識が使えます。\nタイトル欄に直接入力してください。');
+        var t = document.getElementById('evTitle');
+        if (t) t.focus();
+        return;
+    }
+    navigator.mediaDevices.getUserMedia({ audio: true })
+    .then(function(stream) {
+        var chunks = [];
+        var mt = MediaRecorder.isTypeSupported('audio/webm;codecs=opus') ? 'audio/webm;codecs=opus'
+                : MediaRecorder.isTypeSupported('audio/webm') ? 'audio/webm' : 'audio/mp4';
+        var mr = new MediaRecorder(stream, { mimeType: mt });
+        isRec = true;
+        var btn = document.getElementById('voiceBtn');
+        var fab = document.getElementById('voiceFab');
+        if (btn) { btn.classList.add('rec'); btn.innerHTML = '&#9209; Gemini録音中（タップで停止）'; btn.onclick = function(){ mr.stop(); }; }
+        if (fab) { fab.classList.add('rec'); fab.innerHTML = '&#9209;'; fab.onclick = function(){ mr.stop(); }; }
+        var timeout = setTimeout(function(){ mr.stop(); }, 15000);
+        mr.ondataavailable = function(e){ if (e.data.size > 0) chunks.push(e.data); };
+        mr.onstop = function() {
+            clearTimeout(timeout);
+            stream.getTracks().forEach(function(t){ t.stop(); });
+            if (btn) btn.innerHTML = '&#128260; 解析中...';
+            if (fab) fab.innerHTML = '&#128260;';
+            var blob = new Blob(chunks, { type: mt });
+            var reader = new FileReader();
+            reader.onload = function() {
+                transcribeWithGemini(reader.result.split(',')[1], mt.split(';')[0]);
+            };
+            reader.readAsDataURL(blob);
+        };
+        mr.start();
+    })
+    .catch(function(err) {
+        alert('マイクにアクセスできません: ' + err.message);
+        stopRec();
+    });
+}
+function transcribeWithGemini(base64, mimeType) {
+    fetch('https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=' + GEMINI_KEY, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+            contents: [{ parts: [
+                { text: 'この音声を文字起こしして、テキストのみを返してください。日本語なら日本語で返してください。' },
+                { inline_data: { mime_type: mimeType, data: base64 } }
+            ]}],
+            generationConfig: { temperature: 0 }
+        })
+    })
+    .then(function(r){ return r.json(); })
+    .then(function(data) {
+        if (data.error) throw new Error(data.error.message);
+        var transcript = data.candidates[0].content.parts[0].text.trim();
+        var parsed = parseVoiceInput(transcript);
+        applyVoiceParsed(parsed, transcript);
+    })
+    .catch(function(e) {
+        alert('Gemini音声認識エラー: ' + e.message + '\nタイトル欄に直接入力してください。');
+        var t = document.getElementById('evTitle');
+        if (t) t.focus();
+    })
+    .finally(function() {
+        stopRec();
+        var btn = document.getElementById('voiceBtn');
+        var fab = document.getElementById('voiceFab');
+        if (btn) btn.onclick = toggleVoice;
+        if (fab) fab.onclick = openAddAndVoice;
+    });
 }
 
 // ===== 音声入力 自然言語解析 =====
