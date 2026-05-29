@@ -458,6 +458,24 @@ function gisLoaded() {
 
 function tryAutoLogin() {
     if (!gapiReady || !gisReady) return;
+    // URLハッシュにアクセストークンがあれば取得（モバイルリダイレクト後）
+    var hash = location.hash;
+    if (hash && hash.indexOf('access_token') !== -1) {
+        var params = {};
+        hash.substring(1).split('&').forEach(function(p) {
+            var kv = p.split('=');
+            if (kv[0]) params[kv[0]] = decodeURIComponent(kv[1] || '');
+        });
+        if (params.access_token) {
+            accessToken = params.access_token;
+            sessionStorage.setItem('sc_tok', accessToken);
+            gapi.client.setToken({ access_token: accessToken });
+            // URLハッシュをクリア（トークンをURLに残さない）
+            history.replaceState(null, '', location.pathname + location.search);
+            onLogin();
+            return;
+        }
+    }
     var tok = sessionStorage.getItem('sc_tok');
     if (tok) {
         accessToken = tok;
@@ -470,8 +488,22 @@ function tryAutoLogin() {
 
 // ===== AUTH =====
 function handleSignIn() {
+    var isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
+    if (isMobile) {
+        // iOS/Android: ポップアップ不可のためリダイレクト方式
+        var redirectUri = location.origin + location.pathname;
+        var url = 'https://accounts.google.com/o/oauth2/v2/auth' +
+            '?client_id=' + encodeURIComponent(CLIENT_ID) +
+            '&redirect_uri=' + encodeURIComponent(redirectUri) +
+            '&response_type=token' +
+            '&scope=' + encodeURIComponent(SCOPES) +
+            '&prompt=select_account' +
+            '&include_granted_scopes=true';
+        location.href = url;
+        return;
+    }
+    // PC: 従来のポップアップ方式
     if (!tokenClient) { alert('しばらくお待ちください（初期化中）'); return; }
-    // prompt:'select_account' で毎回アカウント選択画面を表示（初回・再ログイン両対応）
     tokenClient.requestAccessToken({ prompt: 'select_account' });
 }
 
