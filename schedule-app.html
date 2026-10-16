@@ -16,8 +16,9 @@
         .nav-tab { flex: 1; padding: 7px 4px; text-align: center; font-size: 12px; color: var(--text2); cursor: pointer; border-bottom: 3px solid transparent; }
         .nav-tab.active { color: var(--primary); border-bottom-color: var(--primary); font-weight: 700; }
         html, body { height: 100%; }
-        body { overflow: hidden; }
-        .main { max-width: 1400px; margin: 0 auto; padding: 4px 8px; height: calc(100vh - 82px); overflow: hidden; }
+        /* 実際に見えている高さ（ブラウザのアドレスバーを除く）に収める。ヘッダー等を除いた残りをカレンダーに使う */
+        body { overflow: hidden; display: flex; flex-direction: column; height: 100vh; height: 100dvh; }
+        .main { width: 100%; max-width: 1400px; margin: 0 auto; padding: 4px 8px; flex: 1; min-height: 0; overflow: hidden; }
         .card { background: white; border-radius: 10px; box-shadow: 0 1px 4px rgba(0,0,0,0.08); padding: 16px; margin-bottom: 8px; }
         .member-legend { display: flex; gap: 8px; flex-wrap: wrap; }
         .legend-item { display: flex; align-items: center; gap: 5px; font-size: 12px; }
@@ -98,13 +99,31 @@
         .day-label { font-size: 13px; font-weight: 700; color: var(--text2); margin: 4px 0 8px; }
         .cal-src { display: inline-block; font-size: 10px; padding: 1px 6px; border-radius: 8px; background: #ECEFF1; color: var(--text2); margin-left: 6px; vertical-align: middle; }
         /* タブレット（横幅768px以上）では予定名を2行まで表示 */
+        .cal-day .more { font-size: 11px; color: var(--primary); font-weight: 700; padding: 0 4px; cursor: pointer; }
+        .cal-day.dense { padding: 3px 4px; }
+        .cal-day.dense .chip { white-space: nowrap; display: block; font-size: 12px; padding: 1px 5px; margin-bottom: 1px; line-height: 1.25; border-radius: 6px; }
+        .cal-day.dense .dn { width: 22px; height: 22px; font-size: 13px; margin-bottom: 1px; }
+        .cal-day.dense .more { line-height: 1.2; }
+        .cal-actions { display: none; gap: 6px; justify-content: flex-end; }
+        /* スマホ：右下の丸いボタンが最後の週に重ならないよう、カレンダーの下に余白を空ける */
+        @media (max-width: 767px) { body.on-calendar .main { padding-bottom: 84px; } }
+        .cal-act { border: none; border-radius: 18px; padding: 7px 14px; font-size: 14px; font-weight: 700; color: white; cursor: pointer; font-family: inherit; white-space: nowrap; }
+        .cal-act.rec { background: #F44336 !important; animation: pulse 1s infinite; }
+        .day-ev { display: flex; align-items: center; gap: 10px; padding: 10px 4px; border-bottom: 1px solid var(--border); cursor: pointer; }
+        .day-ev:last-child { border-bottom: none; }
+        .day-ev .bar { width: 6px; align-self: stretch; border-radius: 3px; flex-shrink: 0; }
+        .day-ev .tm2 { font-size: 12px; color: var(--text2); min-width: 48px; }
         @media (min-width: 768px) {
             .chip { white-space: normal; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; line-height: 1.3; font-size: 13px; }
             .nav-tab { font-size: 14px; padding: 9px 4px; }
+            /* タブレット：ボタン3つは月の見出しの行に置き、カレンダーに重ねない */
+            .cal-actions { display: flex; }
+            .this-month-btn { display: none; }
+            body.on-calendar .fab { display: none; }
         }
     </style>
 </head>
-<body>
+<body class="on-calendar">
 
 <header class="header">
     <h1>&#128197; 家族スケジュール</h1>
@@ -132,7 +151,14 @@
                 <span class="cal-title" id="monthTitle" onclick="goThisMonth()" style="cursor:pointer" title="今月に戻る"></span>
                 <button class="cal-nav" onclick="changeMonth(1)">&#8250;</button>
             </div>
-            <div style="flex:1;text-align:right"><button class="cal-nav this-month-btn" onclick="goThisMonth()" style="width:auto;border-radius:14px;padding:0 10px;font-size:12px">今月</button></div>
+            <div style="flex:1;display:flex;justify-content:flex-end;align-items:center;gap:6px">
+                <button class="cal-nav this-month-btn" onclick="goThisMonth()" style="width:auto;border-radius:14px;padding:0 10px;font-size:12px">今月</button>
+                <div class="cal-actions">
+                    <button class="cal-act" style="background:#F57C00" onclick="openCam()">&#128247; 写真</button>
+                    <button class="cal-act" id="voiceHdr" style="background:#00897B" onclick="openAddAndVoice()">&#127897; 音声</button>
+                    <button class="cal-act" style="background:var(--primary)" onclick="openAdd()">&#65291; 追加</button>
+                </div>
+            </div>
         </div>
         <div class="cal-grid">
             <div class="cal-wdays"><div>日</div><div>月</div><div>火</div><div>水</div><div>木</div><div>金</div><div>土</div></div>
@@ -328,6 +354,17 @@
             <button class="btn-s" onclick="openCopy()" style="background:#4CAF50">&#128203; コピー</button>
             <button class="btn-s" onclick="openEdit()" style="background:#FF9800">&#9999; 編集</button>
             <button class="btn-s" onclick="deleteEv()" style="background:#F44336">&#128465; 削除</button>
+        </div>
+    </div>
+</div>
+<!-- その日の予定一覧（日付や「+◯件」を押したとき） -->
+<div id="dayModal" class="overlay" style="display:none" onclick="if(event.target===this)closeDay()">
+    <div class="modal" style="max-width:440px">
+        <div class="mh"><h3 id="dayTitle">予定</h3><button class="mc" onclick="closeDay()">&#10005;</button></div>
+        <div class="mb" id="dayBody"></div>
+        <div class="mf">
+            <button class="btn-c" onclick="closeDay()">閉じる</button>
+            <button class="btn-s" id="dayAddBtn">&#65291; この日に追加</button>
         </div>
     </div>
 </div>
@@ -951,6 +988,8 @@ function switchTab(name) {
     document.querySelectorAll('.nav-tab').forEach(function(el) { el.classList.remove('active'); });
     var tab = document.getElementById('tab-' + name);
     if (tab) tab.classList.add('active');
+    document.body.classList.toggle('on-calendar', name === 'calendar');
+    if (name === 'calendar') requestAnimationFrame(fitChips);
     var tabs = document.querySelectorAll('.nav-tab');
     var names = ['calendar','today','checklist','settings'];
     var idx = names.indexOf(name);
@@ -1147,21 +1186,71 @@ function renderCal() {
         if (ds === todayStr) cls += ' today';
         if (dow === 0) cls += ' sun';
         if (dow === 6) cls += ' sat';
-        var dayEvs = events.filter(function(e){ return evDate(e) === ds && passMemFilter(e); });
-        var chips = dayEvs.slice(0,3).map(function(e) {
+        var dayEvs = dayEvents(ds);
+        // 3件以上の日は1行ずつに詰める。入りきらない分は fitChips() が「+◯件」にまとめる
+        if (dayEvs.length >= 3) cls += ' dense';
+        var chips = dayEvs.map(function(e) {
             var t = esc(e.summary||'（無題）');
             var hasBl = getBl(e).length ? '🎒' : '';
             return '<div class="chip" style="background:' + evColor(e) + '" onclick="event.stopPropagation();showDet(\'' + esc(e.id) + '\')" title="' + t + '">' + hasBl + t + '</div>';
         }).join('');
-        var more = dayEvs.length > 3 ? '<div style="font-size:9px;color:var(--text2)">+' + (dayEvs.length-3) + '件</div>' : '';
-        html += '<div class="' + cls + '" onclick="openAddWithDate(\'' + ds + '\')"><div class="dn">' + d + '</div>' + chips + more + '</div>';
+        var more = dayEvs.length ? '<div class="more" style="display:none" onclick="event.stopPropagation();openDay(\'' + ds + '\')"></div>' : '';
+        // 予定がある日は日付を押すとその日の一覧、ない日はすぐ追加画面
+        var onClick = dayEvs.length ? 'openDay(\'' + ds + '\')' : 'openAddWithDate(\'' + ds + '\')';
+        html += '<div class="' + cls + '" onclick="' + onClick + '"><div class="dn">' + d + '</div>' + chips + more + '</div>';
     }
     var used = firstDay + days;
     var rem = used % 7 === 0 ? 0 : 7 - (used % 7);
     for (var j = 1; j <= rem; j++)
         html += '<div class="cal-day other"><div class="dn">' + j + '</div></div>';
     document.getElementById('calDays').innerHTML = html;
+    requestAnimationFrame(fitChips);
 }
+
+function dayEvents(ds) {
+    return events.filter(function(e){ return evDate(e) === ds && passMemFilter(e); });
+}
+
+// マスに入りきらない予定を隠して「+◯件」を出す（画面の大きさに合わせて毎回計算）
+function fitChips() {
+    document.querySelectorAll('#calDays .cal-day').forEach(function(cell) {
+        var chips = cell.querySelectorAll('.chip');
+        var more = cell.querySelector('.more');
+        if (!chips.length || !more) return;
+        chips.forEach(function(c){ c.style.display = ''; });
+        more.style.display = 'none';
+        if (cell.scrollHeight <= cell.clientHeight + 1) return;
+        more.style.display = 'block';
+        var hidden = 0;
+        for (var i = chips.length - 1; i >= 0 && cell.scrollHeight > cell.clientHeight + 1; i--) {
+            chips[i].style.display = 'none';
+            hidden++;
+            more.textContent = '+' + hidden + '件';
+        }
+        more.textContent = '+' + hidden + '件';
+    });
+}
+window.addEventListener('resize', function() { requestAnimationFrame(fitChips); });
+
+function openDay(ds) {
+    var d = new Date(ds + 'T00:00:00');
+    var w = ['日','月','火','水','木','金','土'][d.getDay()];
+    document.getElementById('dayTitle').textContent = (d.getMonth()+1) + '月' + d.getDate() + '日（' + w + '）の予定';
+    var evs = dayEvents(ds);
+    document.getElementById('dayBody').innerHTML = evs.length ? evs.map(function(e) {
+        var time = e.start.dateTime ? e.start.dateTime.substring(11,16) : '終日';
+        var names = evMemberNames(e);
+        var bl = getBl(e).length ? ' 🎒' : '';
+        return '<div class="day-ev" onclick="closeDay();showDet(\'' + esc(e.id) + '\')">'
+            + '<span class="bar" style="background:' + evColor(e) + '"></span>'
+            + '<span class="tm2">' + time + '</span>'
+            + '<span style="flex:1;font-size:15px">' + esc(e.summary || '（無題）') + bl
+            + (names.length ? '<br><span style="font-size:11px;color:var(--text2)">' + esc(names.join('、')) + '</span>' : '') + '</span></div>';
+    }).join('') : '<p style="color:var(--text2);text-align:center;padding:16px">予定はありません</p>';
+    document.getElementById('dayAddBtn').onclick = function() { closeDay(); openAddWithDate(ds); };
+    document.getElementById('dayModal').style.display = 'flex';
+}
+function closeDay() { document.getElementById('dayModal').style.display = 'none'; }
 
 // offset日後（0=今日, 1=明日）の予定
 function nearOn(offset) {
@@ -1679,10 +1768,7 @@ function startRec() {
     };
     recog.onend = stopRec;
     recog.start(); isRec = true;
-    var btn = document.getElementById('voiceBtn');
-    if (btn) { btn.classList.add('rec'); btn.innerHTML = '&#9209; 話してください...'; }
-    var fab = document.getElementById('voiceFab');
-    if (fab) { fab.classList.add('rec'); fab.innerHTML = '&#9209;'; }
+    setVoiceButtons('&#9209; 話してください...', '&#9209;');
 }
 var geminiRecorder = null;
 
@@ -1695,6 +1781,8 @@ function stopRec() {
     if (btn) { btn.classList.remove('rec'); btn.innerHTML = '&#127897;'; }
     var fab = document.getElementById('voiceFab');
     if (fab) { fab.classList.remove('rec'); fab.innerHTML = '&#127897;'; }
+    var hdr = document.getElementById('voiceHdr');
+    if (hdr) { hdr.classList.remove('rec'); hdr.innerHTML = '&#127897; 音声'; }
 }
 
 // 録音を解析せずに捨てる（予定の追加画面を閉じたとき）
@@ -1710,6 +1798,8 @@ function setVoiceButtons(label, fabIcon) {
     var fab = document.getElementById('voiceFab');
     if (btn) { btn.classList.add('rec'); btn.innerHTML = label; }
     if (fab) { fab.classList.add('rec'); fab.innerHTML = fabIcon; }
+    var hdr = document.getElementById('voiceHdr');
+    if (hdr) { hdr.classList.add('rec'); hdr.innerHTML = fabIcon + ' 録音中'; }
 }
 
 // 録音して、音声をそのままGeminiに渡す。話し終わり（約2秒の無音）で自動停止、最長30秒
