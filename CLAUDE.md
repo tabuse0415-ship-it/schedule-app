@@ -14,7 +14,7 @@ Google Calendar API を使ったシングルファイルの家族スケジュー
 | 項目 | 値 |
 |------|-----|
 | CLIENT_ID | `55276251258-eoumi828hrut2k9jp6b05iia31q4gloq.apps.googleusercontent.com` |
-| GEMINI_KEY | `AIzaSyBN3msKNO7HrUsoBZ20J578aOheaCauH20` |
+| GEMINI_KEY | 各端末の「設定」タブで入力（ブラウザの localStorage `gemini_api_key` に保存）。**このリポジトリは公開されているため、APIキーやトークンをファイルに書かないこと** |
 | calendarId | `primary`（ユーザーのメインカレンダー） |
 | 認証方式 | Google Identity Services (GIS) + gapi.client |
 | スコープ | `https://www.googleapis.com/auth/calendar` |
