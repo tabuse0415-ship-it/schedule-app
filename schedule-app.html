@@ -87,6 +87,21 @@
         .sp { text-align: center; padding: 48px 20px; }
         .sp h2 { font-size: 20px; margin-bottom: 10px; }
         .sp p { color: var(--text2); margin-bottom: 20px; line-height: 1.6; }
+        .reauth-bar { display: none; background: #FFF3E0; color: #E65100; font-size: 13px; padding: 6px 12px; text-align: center; position: sticky; top: 38px; z-index: 98; }
+        .reauth-bar button { margin-left: 8px; background: #E65100; color: white; border: none; border-radius: 14px; padding: 3px 12px; font-size: 12px; font-weight: 700; cursor: pointer; font-family: inherit; }
+        .mem-filter { border: 1px solid var(--border); border-radius: 14px; padding: 3px 8px; font-size: 12px; font-family: inherit; background: white; color: var(--text); max-width: 120px; }
+        .cal-title { white-space: nowrap; }
+        @media (max-width: 480px) {
+            .mem-filter { max-width: 76px; }
+            .this-month-btn { display: none; }
+        }
+        .day-label { font-size: 13px; font-weight: 700; color: var(--text2); margin: 4px 0 8px; }
+        .cal-src { display: inline-block; font-size: 10px; padding: 1px 6px; border-radius: 8px; background: #ECEFF1; color: var(--text2); margin-left: 6px; vertical-align: middle; }
+        /* タブレット（横幅768px以上）では予定名を2行まで表示 */
+        @media (min-width: 768px) {
+            .chip { white-space: normal; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; line-height: 1.3; font-size: 13px; }
+            .nav-tab { font-size: 14px; padding: 9px 4px; }
+        }
     </style>
 </head>
 <body>
@@ -106,13 +121,18 @@
     <div class="nav-tab" onclick="switchTab('checklist')">&#9989; 持ち物</div>
     <div class="nav-tab" onclick="switchTab('settings')">&#9881; 設定</div>
 </nav>
+<div id="reauthBar" class="reauth-bar">ログインの有効期限が切れました<button onclick="handleSignIn()">再ログイン</button></div>
 
 <div class="main">
     <div id="tab-calendar" class="tab-content active">
         <div class="card cal-header">
-            <button class="cal-nav" onclick="changeMonth(-1)">&#8249;</button>
-            <span class="cal-title" id="monthTitle"></span>
-            <button class="cal-nav" onclick="changeMonth(1)">&#8250;</button>
+            <div style="flex:1"><select id="memFilter" class="mem-filter" onchange="setMemFilter(this.value)"><option value="">&#128106; 全員</option></select></div>
+            <div style="display:flex;align-items:center;gap:12px">
+                <button class="cal-nav" onclick="changeMonth(-1)">&#8249;</button>
+                <span class="cal-title" id="monthTitle" onclick="goThisMonth()" style="cursor:pointer" title="今月に戻る"></span>
+                <button class="cal-nav" onclick="changeMonth(1)">&#8250;</button>
+            </div>
+            <div style="flex:1;text-align:right"><button class="cal-nav this-month-btn" onclick="goThisMonth()" style="width:auto;border-radius:14px;padding:0 10px;font-size:12px">今月</button></div>
         </div>
         <div class="cal-grid">
             <div class="cal-wdays"><div>日</div><div>月</div><div>火</div><div>水</div><div>木</div><div>金</div><div>土</div></div>
@@ -130,6 +150,10 @@
             <h2 id="todayTitle" style="font-size:15px;font-weight:700;margin-bottom:12px;color:var(--primary)">今日の予定</h2>
             <div id="todayEvents"><p style="color:var(--text2);text-align:center;padding:20px">読み込み中...</p></div>
         </div>
+        <div class="card">
+            <h2 id="tomorrowTitle" style="font-size:15px;font-weight:700;margin-bottom:12px;color:#00897B">明日の予定</h2>
+            <div id="tomorrowEvents"><p style="color:var(--text2);text-align:center;padding:20px">読み込み中...</p></div>
+        </div>
     </div>
 
     <div id="tab-checklist" class="tab-content">
@@ -137,12 +161,26 @@
             <h3 style="font-size:15px;font-weight:700;margin-bottom:14px">&#127890; 今日の持ち物チェック</h3>
             <div id="checkContent"><p style="color:var(--text2);text-align:center;padding:16px">予定に持ち物を登録するとここに表示されます</p></div>
         </div>
+        <div class="card">
+            <h3 style="font-size:15px;font-weight:700;margin-bottom:14px;color:#00897B">&#127769; 明日の持ち物（前の晩に準備）</h3>
+            <div id="checkContentTomorrow"><p style="color:var(--text2);text-align:center;padding:16px">明日の予定に持ち物はありません</p></div>
+        </div>
     </div>
 
     <div id="tab-settings" class="tab-content">
         <div class="card">
-            <h3 style="font-size:15px;font-weight:700;margin-bottom:14px">&#128106; メンバー設定</h3>
+            <h3 style="font-size:15px;font-weight:700;margin-bottom:4px">&#128106; メンバー設定</h3>
+            <p style="font-size:12px;color:var(--text2);margin-bottom:8px">色の丸をタップすると色を変えられます。予定の色はメンバーの色で表示されます。</p>
             <div id="memberSettings"></div>
+            <div class="row" style="margin-top:10px">
+                <input type="text" id="newMemberName" placeholder="メンバーを追加（例：じいじ）" style="padding:8px 12px;border:1px solid var(--border);border-radius:8px;font-size:14px;font-family:inherit;outline:none;flex:1" onkeypress="if(event.key==='Enter'){event.preventDefault();addMember()}">
+                <button class="ibt" onclick="addMember()">&#65291;</button>
+            </div>
+        </div>
+        <div class="card">
+            <h3 style="font-size:15px;font-weight:700;margin-bottom:4px">&#128467; 表示するGoogleカレンダー</h3>
+            <p style="font-size:12px;color:var(--text2);margin-bottom:8px">家族（妻など）のGoogleカレンダーを表示するには、その人のGoogleカレンダーの「設定と共有」→「特定のユーザーと共有」で、このアカウントを追加してください（権限は「予定の変更」がおすすめ）。共有されるとここに出てきます。新しい予定はいつも自分のメインカレンダーに登録されます。</p>
+            <div id="calendarSettings"><p style="font-size:13px;color:var(--text2)">ログインすると表示されます</p></div>
         </div>
         <div class="card">
             <h3 style="font-size:15px;font-weight:700;margin-bottom:4px">&#127890; 持ち物プリセット管理</h3>
@@ -419,6 +457,18 @@ var blData = JSON.parse(localStorage.getItem('sc_bl') || '{}');
 var notifyData = JSON.parse(localStorage.getItem('sc_notify') || '{}');
 var notifiedToday = JSON.parse(sessionStorage.getItem('sc_notified') || '{}');
 var notifyTimerStarted = false;
+var nearEvents = [];      // 今日・明日の予定（表示月に関係なく取得）
+var calendars = [];       // 閲覧できるGoogleカレンダー一覧
+var selectedCals = JSON.parse(localStorage.getItem('sc_cals') || 'null') || ['primary'];
+var memFilter = localStorage.getItem('sc_memfilter') || '';
+var uiInited = false;
+var refreshTimerStarted = false;
+
+function esc(s) {
+    return String(s == null ? '' : s).replace(/[&<>"']/g, function(c) {
+        return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];
+    });
+}
 
 // ===== GAPI INIT =====
 function gapiLoaded() {
@@ -449,6 +499,7 @@ function gisLoaded() {
             }
             accessToken = resp.access_token;
             sessionStorage.setItem('sc_tok', accessToken);
+            gapi.client.setToken({ access_token: accessToken });
             onLogin();
         }
     });
@@ -517,7 +568,9 @@ function handleSignOut() {
     document.getElementById('spPrompt').style.display = 'block';
     document.getElementById('calStatus').textContent = '未接続';
     document.getElementById('calStatus').style.color = 'var(--text2)';
+    document.getElementById('reauthBar').style.display = 'none';
     events = [];
+    nearEvents = [];
     renderCal();
 }
 
@@ -526,35 +579,143 @@ function onLogin() {
     document.getElementById('signOutBtn').style.display = 'block';
     document.getElementById('connStatus').textContent = '✅ 接続中';
     document.getElementById('spPrompt').style.display = 'none';
+    document.getElementById('reauthBar').style.display = 'none';
     document.getElementById('calStatus').textContent = '接続済み ✅';
     document.getElementById('calStatus').style.color = '#4CAF50';
-    loadEvents();
+    if (!uiInited) { initUI(); uiInited = true; }
+    loadCalendars().then(refreshAll);
     requestNotifyPerm();
     startNotifyTimer();
+    startRefreshTimer();
 }
 
-// ===== CALENDAR API =====
-function loadEvents() {
-    var y = ym.y, m = ym.m;
-    gapi.client.calendar.events.list({
-        calendarId: 'primary',
-        timeMin: new Date(y, m, 1).toISOString(),
-        timeMax: new Date(y, m+1, 0, 23, 59, 59).toISOString(),
-        singleEvents: true,
-        orderBy: 'startTime',
-        maxResults: 250
-    }).then(function(res) {
-        events = res.result.items || [];
-        renderCal();
-        renderToday();
-        renderCl();
-    }).catch(function(e) {
-        console.error(e);
-        if (e.status === 401) handleSignOut();
+// トークン切れ：画面は消さずに再ログインを促す（壁掛けタブレット向け）
+function onAuthExpired() {
+    document.getElementById('reauthBar').style.display = 'block';
+    document.getElementById('connStatus').textContent = '⚠️ 要再ログイン';
+}
+function handleApiError(e) {
+    console.error(e);
+    if (e && (e.status === 401 || (e.result && e.result.error && e.result.error.code === 401))) onAuthExpired();
+}
+
+// 5分ごと・画面に戻ったとき・日付が変わったときに自動更新
+function startRefreshTimer() {
+    if (refreshTimerStarted) return;
+    refreshTimerStarted = true;
+    var lastDay = fmtD(new Date());
+    setInterval(function() {
+        var today = fmtD(new Date());
+        if (today !== lastDay) { lastDay = today; updateTodayTitle(); }
+        if (accessToken) refreshAll();
+    }, 5 * 60000);
+    document.addEventListener('visibilitychange', function() {
+        if (!document.hidden && accessToken) refreshAll();
     });
 }
 
-function saveEvToApi(data) {
+function refreshAll() {
+    loadEvents();
+    loadNear();
+}
+
+// ===== CALENDAR API =====
+function loadCalendars() {
+    return gapi.client.calendar.calendarList.list({ minAccessRole: 'reader' }).then(function(res) {
+        calendars = (res.result.items || []).map(function(c) {
+            return {
+                id: c.primary ? 'primary' : c.id,
+                name: c.summaryOverride || c.summary || c.id,
+                color: c.backgroundColor || '#1976D2',
+                primary: !!c.primary,
+                writable: c.accessRole === 'owner' || c.accessRole === 'writer'
+            };
+        });
+        // 存在しないカレンダーを選択から外す
+        selectedCals = selectedCals.filter(function(id) {
+            return calendars.some(function(c){ return c.id === id; });
+        });
+        if (selectedCals.indexOf('primary') < 0) selectedCals.unshift('primary');
+        renderCalendarSettings();
+    }).catch(function(e) {
+        handleApiError(e);
+        calendars = [{ id: 'primary', name: 'メイン', color: '#1976D2', primary: true, writable: true }];
+    });
+}
+
+function calInfo(id) {
+    return calendars.find(function(c){ return c.id === id; }) || { id: id, name: '', color: '#1976D2', primary: id === 'primary', writable: true };
+}
+
+// 選択中のすべてのカレンダーから期間内の予定を取得してまとめる
+function fetchRange(timeMin, timeMax) {
+    var ids = selectedCals.length ? selectedCals : ['primary'];
+    return Promise.all(ids.map(function(calId) {
+        return gapi.client.calendar.events.list({
+            calendarId: calId,
+            timeMin: timeMin.toISOString(),
+            timeMax: timeMax.toISOString(),
+            singleEvents: true,
+            orderBy: 'startTime',
+            maxResults: 250
+        }).then(function(res) {
+            return (res.result.items || []).map(function(ev) { ev._cal = calId; return ev; });
+        }).catch(function(e) {
+            handleApiError(e);
+            if (e && e.status === 401) throw e;
+            return [];
+        });
+    })).then(function(lists) {
+        var all = [].concat.apply([], lists);
+        // 自分と家族の両方に招待されている同じ予定は1つにまとめる
+        var seen = {};
+        all = all.filter(function(ev) {
+            var key = ev.iCalUID ? ev.iCalUID + '|' + evDate(ev) : ev._cal + ev.id;
+            if (seen[key]) return false;
+            seen[key] = true;
+            return true;
+        });
+        all.sort(function(a, b) {
+            var sa = (a.start.dateTime || a.start.date || ''), sb = (b.start.dateTime || b.start.date || '');
+            if (a.start.date && !b.start.date && sa.substring(0,10) === sb.substring(0,10)) return -1;
+            if (b.start.date && !a.start.date && sa.substring(0,10) === sb.substring(0,10)) return 1;
+            return sa < sb ? -1 : sa > sb ? 1 : 0;
+        });
+        return all;
+    });
+}
+
+function loadEvents() {
+    var y = ym.y, m = ym.m;
+    return fetchRange(new Date(y, m, 1), new Date(y, m+1, 0, 23, 59, 59)).then(function(list) {
+        // 月を切り替えている間に古い応答が届いた場合は捨てる
+        if (y !== ym.y || m !== ym.m) return;
+        events = list;
+        renderCal();
+    }).catch(handleApiError);
+}
+
+// 今日・明日の予定（どの月を表示中でも「今日」タブと持ち物が正しく出るように別取得）
+function loadNear() {
+    var now = new Date();
+    var start = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    var end = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1, 23, 59, 59);
+    return fetchRange(start, end).then(function(list) {
+        nearEvents = list;
+        renderToday();
+        renderCl();
+        checkNotify();
+    }).catch(handleApiError);
+}
+
+function findEv(evId) {
+    return events.find(function(e){return e.id===evId;}) || nearEvents.find(function(e){return e.id===evId;});
+}
+
+function evDate(ev) { return (ev.start.date || ev.start.dateTime || '').substring(0,10); }
+
+// 予定データ → Google Calendarのイベント形式
+function buildEvResource(data, rrule) {
     var desc = '';
     if (data.members.length > 0) {
         var names = data.members.map(function(id) {
@@ -567,42 +728,46 @@ function saveEvToApi(data) {
     if (data.note) desc += '📝 ' + data.note;
 
     var ev = { summary: data.title, description: desc, start: {}, end: {} };
-    if (data.st && data.et) {
+    if (data.st) {
+        var et = data.et;
+        if (!et) { var h = parseInt(data.st.substring(0,2)) + 1; et = (h > 23 ? '23:59' : pad(h) + data.st.substring(2)); }
         ev.start = { dateTime: data.date + 'T' + data.st + ':00', timeZone: 'Asia/Tokyo' };
-        ev.end   = { dateTime: data.date + 'T' + data.et + ':00', timeZone: 'Asia/Tokyo' };
+        ev.end   = { dateTime: data.date + 'T' + et + ':00', timeZone: 'Asia/Tokyo' };
     } else {
+        // 終日予定の終了日は「翌日」を指定するのがGoogleカレンダーの仕様
+        var nd = new Date(data.date + 'T00:00:00'); nd.setDate(nd.getDate() + 1);
         ev.start = { date: data.date };
-        ev.end   = { date: data.date };
+        ev.end   = { date: fmtD(nd) };
     }
     if (data.members.length > 0) {
         var fm = members.find(function(x){return x.id===data.members[0];});
         if (fm) ev.colorId = c2id(fm.color);
     }
-    var rrule = buildRRule();
     if (rrule) ev.recurrence = [rrule];
-
-    // Google Calendarリマインダー設定
     if (data.notify >= 0) {
         ev.reminders = { useDefault: false, overrides: [{ method: 'popup', minutes: data.notify }] };
     } else {
         ev.reminders = { useDefault: false, overrides: [] };
     }
+    // 持ち物のチェック状態は予定と一緒にGoogle側へ保存（タブレットとスマホで共有）
+    ev.extendedProperties = { shared: { bl_checked: '[]' } };
+    return ev;
+}
 
+function saveEvToApi(data, opts) {
+    opts = opts || {};
+    var ev = buildEvResource(data, opts.rrule === undefined ? buildRRule() : opts.rrule);
     return gapi.client.calendar.events.insert({ calendarId: 'primary', resource: ev })
     .then(function(res) {
-        if (data.bl.length > 0) {
-            blData[res.result.id] = data.bl.map(function(b){return {name:b,checked:false};});
-            localStorage.setItem('sc_bl', JSON.stringify(blData));
-        }
         if (data.notify >= 0) {
             notifyData[res.result.id] = data.notify;
             localStorage.setItem('sc_notify', JSON.stringify(notifyData));
         }
-        loadEvents();
-        return true;
+        if (!opts.noReload) refreshAll();
+        return res.result.id || true;
     }).catch(function(e) {
-        console.error(e);
-        alert('保存に失敗しました: ' + (e.result && e.result.error ? e.result.error.message : e.message));
+        handleApiError(e);
+        if (!opts.silent) alert('保存に失敗しました: ' + (e.result && e.result.error ? e.result.error.message : e.message));
         return false;
     });
 }
@@ -626,41 +791,77 @@ function fmtT(ev) {
     return '';
 }
 
+var GCAL_COLORS = {'1':'#7986CB','2':'#33B679','3':'#8E24AA','4':'#E67C73','5':'#F6BF26','6':'#F4511E','7':'#039BE5','8':'#616161','9':'#3F51B5','10':'#0B8043','11':'#D50000'};
+
+// メンバーの色に一番近いGoogleカレンダーの色番号（Googleカレンダー側でも近い色で表示される）
 function c2id(c) {
-    var map = {'#1976D2':'9','#E91E63':'4','#4CAF50':'2','#FF9800':'6','#9C27B0':'3','#F44336':'11','#607D8B':'8','#00BCD4':'7'};
-    return map[c] || '1';
+    function rgb(h) { h = h.replace('#',''); return [parseInt(h.substr(0,2),16), parseInt(h.substr(2,2),16), parseInt(h.substr(4,2),16)]; }
+    if (!/^#[0-9a-fA-F]{6}$/.test(c || '')) return '1';
+    var t = rgb(c), best = '1', bestD = Infinity;
+    Object.keys(GCAL_COLORS).forEach(function(id) {
+        var p = rgb(GCAL_COLORS[id]);
+        var d = Math.pow(t[0]-p[0],2) + Math.pow(t[1]-p[1],2) + Math.pow(t[2]-p[2],2);
+        if (d < bestD) { bestD = d; best = id; }
+    });
+    return best;
+}
+
+// 予定の説明欄「👥 名前1、名前2」からメンバー名を取り出す
+function evMemberNames(ev) {
+    var m = (ev.description || '').match(/👥\s*([^\n]+)/);
+    if (!m) return [];
+    return m[1].split(/[、,]/).map(function(s){ return s.trim(); }).filter(Boolean);
 }
 
 function evColor(ev) {
-    var desc = ev.description || '';
-    for (var i=0; i<members.length; i++) {
-        if (desc.indexOf(members[i].name) >= 0) return members[i].color;
+    var names = evMemberNames(ev);
+    for (var i=0; i<names.length; i++) {
+        var mm = members.find(function(x){ return x.name === names[i]; });
+        if (mm) return mm.color;
     }
-    var cmap = {'1':'#7986CB','2':'#33B679','3':'#8E24AA','4':'#E67C73','5':'#F6BF26','6':'#F4511E','7':'#039BE5','8':'#616161','9':'#3F51B5','10':'#0B8043','11':'#D50000'};
-    return cmap[ev.colorId] || '#1976D2';
+    if (ev.colorId && GCAL_COLORS[ev.colorId]) return GCAL_COLORS[ev.colorId];
+    // 家族のカレンダーの予定は、そのカレンダーの色で表示
+    if (ev._cal && ev._cal !== 'primary') return calInfo(ev._cal).color;
+    return '#1976D2';
+}
+
+function passMemFilter(ev) {
+    if (!memFilter) return true;
+    var mm = members.find(function(x){ return x.id === memFilter; });
+    if (!mm) return true;
+    return evMemberNames(ev).indexOf(mm.name) >= 0;
+}
+
+function setMemFilter(v) {
+    memFilter = v;
+    localStorage.setItem('sc_memfilter', v);
+    renderCal();
+}
+
+function renderMemFilter() {
+    var sel = document.getElementById('memFilter');
+    if (!sel) return;
+    if (memFilter && !members.some(function(m){ return m.id === memFilter; })) memFilter = '';
+    sel.innerHTML = '<option value="">&#128106; 全員</option>' + members.map(function(m) {
+        return '<option value="' + esc(m.id) + '"' + (m.id === memFilter ? ' selected' : '') + '>' + esc(m.name) + '</option>';
+    }).join('');
 }
 
 // ===== UI RENDER =====
 function initUI() {
     cleanupOldPhotos();
-    renderLegend();
     renderMemberCbs();
     renderMemberSettings();
+    renderMemFilter();
     renderPresetSettings();
     renderCal();
     updateTodayTitle();
     setToday();
 }
 
-function renderLegend() {
-    document.getElementById('memberLegend').innerHTML = members.map(function(m) {
-        return '<div class="legend-item"><div class="dot" style="background:' + m.color + '"></div><span>' + m.name + '</span></div>';
-    }).join('');
-}
-
 function renderMemberCbs() {
     document.getElementById('memberCbs').innerHTML = members.map(function(m) {
-        return '<div class="mcb"><input type="checkbox" id="mc-' + m.id + '" value="' + m.id + '" onchange="updCbLabel(this)"><label for="mc-' + m.id + '" style="border-color:' + m.color + ';color:' + m.color + '">' + m.name + '</label></div>';
+        return '<div class="mcb"><input type="checkbox" id="mc-' + esc(m.id) + '" value="' + esc(m.id) + '" onchange="updCbLabel(this)"><label for="mc-' + esc(m.id) + '" style="border-color:' + m.color + ';color:' + m.color + '">' + esc(m.name) + '</label></div>';
     }).join('');
 }
 
@@ -674,15 +875,72 @@ function updCbLabel(cb) {
 
 function renderMemberSettings() {
     document.getElementById('memberSettings').innerHTML = members.map(function(m, i) {
-        return '<div class="srow"><div style="display:flex;align-items:center;gap:8px"><div class="dot" style="background:' + m.color + '"></div><input class="mni" value="' + m.name + '" onchange="updMember(' + i + ',this.value)"></div><span style="font-size:11px;color:var(--text2)">' + m.color + '</span></div>';
+        return '<div class="srow"><div style="display:flex;align-items:center;gap:8px">' +
+            '<input type="color" value="' + m.color + '" onchange="updMemberColor(' + i + ',this.value)" title="色を変える" style="width:30px;height:30px;border:none;border-radius:50%;padding:0;background:none;cursor:pointer">' +
+            '<input class="mni" value="' + esc(m.name) + '" onchange="updMember(' + i + ',this.value)"></div>' +
+            '<button onclick="removeMember(' + i + ')" style="background:none;border:none;color:#F44336;font-size:13px;cursor:pointer;font-family:inherit">削除</button></div>';
     }).join('');
 }
 
-function updMember(i, name) {
-    members[i].name = name;
+function saveMembers() {
     localStorage.setItem('sc_members', JSON.stringify(members));
-    renderLegend();
+    renderMemberSettings();
     renderMemberCbs();
+    renderMemFilter();
+    renderCal();
+    renderToday();
+}
+
+function updMember(i, name) {
+    name = name.trim();
+    if (!name) { renderMemberSettings(); return; }
+    var old = members[i].name;
+    if (old !== name && !confirm('「' + old + '」を「' + name + '」に変更します。\n※すでに登録済みの予定の「' + old + '」は自動では変わりません。よろしいですか？')) { renderMemberSettings(); return; }
+    members[i].name = name;
+    saveMembers();
+}
+
+function updMemberColor(i, color) {
+    members[i].color = color;
+    saveMembers();
+}
+
+function addMember() {
+    var inp = document.getElementById('newMemberName');
+    var name = inp.value.trim();
+    if (!name) return;
+    if (members.some(function(m){ return m.name === name; })) { alert('同じ名前のメンバーがいます'); return; }
+    var palette = ['#1976D2','#E91E63','#4CAF50','#FF9800','#9C27B0','#00ACC1','#795548','#F44336','#607D8B','#FFC107'];
+    members.push({ id: 'm' + Date.now(), name: name, color: palette[members.length % palette.length] });
+    inp.value = '';
+    saveMembers();
+}
+
+function removeMember(i) {
+    if (!confirm('メンバー「' + members[i].name + '」を削除しますか？\n（登録済みの予定は消えません）')) return;
+    members.splice(i, 1);
+    saveMembers();
+}
+
+function renderCalendarSettings() {
+    var el = document.getElementById('calendarSettings');
+    if (!el) return;
+    if (!calendars.length) { el.innerHTML = '<p style="font-size:13px;color:var(--text2)">ログインすると表示されます</p>'; return; }
+    el.innerHTML = calendars.map(function(c) {
+        var on = selectedCals.indexOf(c.id) >= 0;
+        return '<label class="srow" style="cursor:pointer;justify-content:flex-start;gap:10px">' +
+            '<input type="checkbox" ' + (on ? 'checked ' : '') + (c.primary ? 'disabled ' : '') + 'data-cal="' + esc(c.id) + '" onchange="toggleCal(this.dataset.cal,this.checked)" style="width:18px;height:18px">' +
+            '<span class="dot" style="background:' + c.color + '"></span>' +
+            '<span style="font-size:14px">' + esc(c.name) + (c.primary ? '（自分・メイン）' : '') + (c.writable ? '' : ' <span class="cal-src">閲覧のみ</span>') + '</span></label>';
+    }).join('');
+}
+
+function toggleCal(id, on) {
+    var i = selectedCals.indexOf(id);
+    if (on && i < 0) selectedCals.push(id);
+    if (!on && i >= 0) selectedCals.splice(i, 1);
+    localStorage.setItem('sc_cals', JSON.stringify(selectedCals));
+    refreshAll();
 }
 
 var MONTHS = ['1月','2月','3月','4月','5月','6月','7月','8月','9月','10月','11月','12月'];
@@ -703,9 +961,9 @@ function switchTab(name) {
         members = JSON.parse(localStorage.getItem('sc_members') || 'null') || members;
         renderMemberSettings();
         renderMemberCbs();
-        renderLegend();
-        checkAlexaServer();
+        renderCalendarSettings();
         initGeminiKeyUI();
+        checkAlexaServer();
     }
 }
 
@@ -713,15 +971,28 @@ function changeMonth(delta) {
     ym.m += delta;
     if (ym.m > 11) { ym.m = 0; ym.y++; }
     if (ym.m < 0)  { ym.m = 11; ym.y--; }
+    events = [];
+    renderCal();
+    if (accessToken) loadEvents();
+}
+
+function goThisMonth() {
+    var now = new Date();
+    if (ym.y === now.getFullYear() && ym.m === now.getMonth()) return;
+    ym = { y: now.getFullYear(), m: now.getMonth() };
+    events = [];
     renderCal();
     if (accessToken) loadEvents();
 }
 
 function updateTodayTitle() {
-    var d = new Date();
     var days = ['日','月','火','水','木','金','土'];
+    var d = new Date();
+    var t = new Date(d.getFullYear(), d.getMonth(), d.getDate() + 1);
     document.getElementById('todayTitle').textContent =
-        d.getFullYear() + '年' + (d.getMonth()+1) + '月' + d.getDate() + '日（' + days[d.getDay()] + '）の予定';
+        '今日 ' + (d.getMonth()+1) + '月' + d.getDate() + '日（' + days[d.getDay()] + '）の予定';
+    document.getElementById('tomorrowTitle').textContent =
+        '明日 ' + (t.getMonth()+1) + '月' + t.getDate() + '日（' + days[t.getDay()] + '）の予定';
 }
 
 function setToday() {
@@ -828,9 +1099,19 @@ function startNotifyTimer() {
 }
 
 function checkNotify() {
-    if (Notification.permission !== 'granted') return;
+    if (!('Notification' in window) || Notification.permission !== 'granted') return;
     var now = new Date();
-    events.forEach(function(ev) {
+    // 毎晩20時以降に「明日の持ち物」を1回だけお知らせ
+    if (now.getHours() >= 20) {
+        var tmr = nearOn(1);
+        var items = [];
+        tmr.forEach(function(ev) { getBl(ev).forEach(function(b) { if (items.indexOf(b.name) < 0) items.push(b.name); }); });
+        if (items.length && localStorage.getItem('sc_eve_notified') !== fmtD(now)) {
+            localStorage.setItem('sc_eve_notified', fmtD(now));
+            new Notification('🎒 明日の持ち物', { body: items.join('、') });
+        }
+    }
+    nearEvents.forEach(function(ev) {
         var evId = ev.id;
         var notify = notifyData[evId];
         if (!notify || notify < 0) return;
@@ -866,10 +1147,11 @@ function renderCal() {
         if (ds === todayStr) cls += ' today';
         if (dow === 0) cls += ' sun';
         if (dow === 6) cls += ' sat';
-        var dayEvs = events.filter(function(e){ return (e.start.date||e.start.dateTime||'').substring(0,10) === ds; });
+        var dayEvs = events.filter(function(e){ return evDate(e) === ds && passMemFilter(e); });
         var chips = dayEvs.slice(0,3).map(function(e) {
-            var t = (e.summary||'（無題）').replace(/'/g,"&#39;");
-            return '<div class="chip" style="background:' + evColor(e) + '" onclick="event.stopPropagation();showDet(\'' + e.id + '\')" title="' + t + '">' + (e.summary||'（無題）') + '</div>';
+            var t = esc(e.summary||'（無題）');
+            var hasBl = getBl(e).length ? '🎒' : '';
+            return '<div class="chip" style="background:' + evColor(e) + '" onclick="event.stopPropagation();showDet(\'' + esc(e.id) + '\')" title="' + t + '">' + hasBl + t + '</div>';
         }).join('');
         var more = dayEvs.length > 3 ? '<div style="font-size:9px;color:var(--text2)">+' + (dayEvs.length-3) + '件</div>' : '';
         html += '<div class="' + cls + '" onclick="openAddWithDate(\'' + ds + '\')"><div class="dn">' + d + '</div>' + chips + more + '</div>';
@@ -881,73 +1163,118 @@ function renderCal() {
     document.getElementById('calDays').innerHTML = html;
 }
 
-function renderToday() {
-    var ts = fmtD(new Date());
-    var evs = events.filter(function(e){ return (e.start.date||e.start.dateTime||'').substring(0,10) === ts; });
-    var el = document.getElementById('todayEvents');
-    if (!evs.length) { el.innerHTML = '<p style="color:var(--text2);text-align:center;padding:20px">今日の予定はありません</p>'; return; }
-    el.innerHTML = evs.map(function(e) {
-        var color = evColor(e);
-        var bls = getBl(e);
-        var blHtml = '';
-        if (bls.length) {
-            blHtml = '<div style="font-size:11px;color:var(--text2);font-weight:700;margin-top:6px;margin-bottom:2px">🎒 持ち物</div>';
-            blHtml += bls.map(function(b, i) {
-                return '<div class="bl-item' + (b.checked?' checked':'') + '"><input type="checkbox" id="td-' + e.id + '-' + i + '"' + (b.checked?' checked':'') + ' onchange="togBl(\'' + e.id + '\',' + i + ',this.checked)"><label for="td-' + e.id + '-' + i + '">' + b.name + '</label></div>';
-            }).join('');
-        }
-        return '<div class="event-card" style="border-left-color:' + color + '"><div class="et">' + (e.summary||'（無題）') + '</div><div class="tm">' + fmtT(e) + '</div>' + blHtml + '</div>';
+// offset日後（0=今日, 1=明日）の予定
+function nearOn(offset) {
+    var n = new Date();
+    var ds = fmtD(new Date(n.getFullYear(), n.getMonth(), n.getDate() + offset));
+    return nearEvents.filter(function(e){ return evDate(e) === ds; });
+}
+
+function blItemsHtml(e, prefix) {
+    return getBl(e).map(function(b, i) {
+        var id = prefix + '-' + esc(e.id) + '-' + i;
+        return '<div class="bl-item' + (b.checked?' checked':'') + '"><input type="checkbox" id="' + id + '"' + (b.checked?' checked':'') + ' onchange="togBl(\'' + esc(e.id) + '\',' + i + ',this.checked)"><label for="' + id + '">' + esc(b.name) + '</label></div>';
     }).join('');
+}
+
+function eventCardHtml(e, prefix) {
+    var names = evMemberNames(e);
+    var who = names.length ? '<span class="cal-src">👥 ' + esc(names.join('、')) + '</span>' : '';
+    var blHtml = getBl(e).length
+        ? '<div style="font-size:11px;color:var(--text2);font-weight:700;margin-top:6px;margin-bottom:2px">🎒 持ち物</div>' + blItemsHtml(e, prefix)
+        : '';
+    return '<div class="event-card" style="border-left-color:' + evColor(e) + ';cursor:pointer" onclick="if(event.target.tagName!==\'INPUT\'&&event.target.tagName!==\'LABEL\')showDet(\'' + esc(e.id) + '\')">' +
+        '<div class="et">' + esc(e.summary||'（無題）') + who + '</div><div class="tm">' + fmtT(e) + '</div>' + blHtml + '</div>';
+}
+
+function renderToday() {
+    [['todayEvents', 0, '今日の予定はありません', 'td'], ['tomorrowEvents', 1, '明日の予定はありません', 'tm']].forEach(function(cfg) {
+        var el = document.getElementById(cfg[0]);
+        if (!el) return;
+        var evs = nearOn(cfg[1]);
+        el.innerHTML = evs.length
+            ? evs.map(function(e){ return eventCardHtml(e, cfg[3]); }).join('')
+            : '<p style="color:var(--text2);text-align:center;padding:20px">' + cfg[2] + '</p>';
+    });
 }
 
 function renderCl() {
-    var ts = fmtD(new Date());
-    var evs = events.filter(function(e){ return (e.start.date||e.start.dateTime||'').substring(0,10) === ts; });
-    var el = document.getElementById('checkContent');
-    var groups = evs.map(function(e){ return {id:e.id, title:e.summary||'（無題）', items:getBl(e)}; }).filter(function(g){ return g.items.length; });
-    if (!groups.length) { el.innerHTML = '<p style="color:var(--text2);text-align:center;padding:16px">今日の予定に持ち物を登録するとここに表示されます</p>'; return; }
-    el.innerHTML = groups.map(function(g) {
-        return '<div style="margin-bottom:14px"><div style="font-size:13px;font-weight:700;margin-bottom:6px">📌 ' + g.title + '</div>' +
-            g.items.map(function(b,i) {
-                return '<div class="bl-item' + (b.checked?' checked':'') + '"><input type="checkbox" id="cl-' + g.id + '-' + i + '"' + (b.checked?' checked':'') + ' onchange="togBl(\'' + g.id + '\',' + i + ',this.checked)"><label for="cl-' + g.id + '-' + i + '">' + b.name + '</label></div>';
-            }).join('') + '</div>';
-    }).join('');
+    [['checkContent', 0, '今日の予定に持ち物を登録するとここに表示されます', 'cl'], ['checkContentTomorrow', 1, '明日の予定に持ち物はありません', 'ct']].forEach(function(cfg) {
+        var el = document.getElementById(cfg[0]);
+        if (!el) return;
+        var groups = nearOn(cfg[1]).filter(function(e){ return getBl(e).length; });
+        if (!groups.length) { el.innerHTML = '<p style="color:var(--text2);text-align:center;padding:16px">' + cfg[2] + '</p>'; return; }
+        el.innerHTML = groups.map(function(e) {
+            var bls = getBl(e);
+            var done = bls.filter(function(b){ return b.checked; }).length;
+            var photos = getEvPhotos(e.id);
+            var photoHtml = photos.length ? '<div style="display:flex;gap:6px;margin:6px 0">' + photos.map(function(src, i) {
+                return '<img src="' + src + '" style="width:64px;height:64px;object-fit:cover;border-radius:6px;cursor:pointer" onclick="viewEvPhoto(\'' + esc(e.id) + '\',' + i + ')">';
+            }).join('') + '</div>' : '';
+            return '<div style="margin-bottom:14px"><div style="font-size:13px;font-weight:700;margin-bottom:6px;display:flex;justify-content:space-between">' +
+                '<span><span class="dot" style="display:inline-block;background:' + evColor(e) + ';margin-right:6px"></span>' + esc(e.summary||'（無題）') + '</span>' +
+                '<span style="color:' + (done === bls.length ? '#4CAF50' : 'var(--text2)') + '">' + (done === bls.length ? '✅ 準備OK' : done + '/' + bls.length) + '</span></div>' +
+                photoHtml + blItemsHtml(e, cfg[3]) + '</div>';
+        }).join('');
+    });
 }
 
+// 持ち物リスト：説明欄「🎒 持ち物：A、B」が正。チェック状態はGoogle側（extendedProperties）を優先し、なければこの端末の保存分
 function getBl(ev) {
-    if (blData[ev.id]) return blData[ev.id];
-    var m = (ev.description||'').match(/🎒 持ち物：(.+)/);
-    if (!m) return [];
-    return m[1].split(/[、,]/).map(function(s){ return {name:s.trim(),checked:false}; });
+    var desc = ev.description || '';
+    var m = desc.match(/🎒\s*持ち物[：:]\s*([^\n]+)/) || desc.match(/持ち物[：:]\s*([^\n]+)/);
+    var names = m ? m[1].split(/[、,・]/).map(function(s){ return s.trim(); }).filter(Boolean)
+                  : (blData[ev.id] || []).map(function(b){ return b.name; });
+    var checkedSet = null;
+    var sh = ev.extendedProperties && ev.extendedProperties.shared;
+    if (sh && sh.bl_checked) { try { checkedSet = JSON.parse(sh.bl_checked); } catch(e) {} }
+    if (!checkedSet) checkedSet = (blData[ev.id] || []).filter(function(b){ return b.checked; }).map(function(b){ return b.name; });
+    return names.map(function(n){ return { name: n, checked: checkedSet.indexOf(n) >= 0 }; });
 }
 
 function togBl(evId, idx, checked) {
-    if (!blData[evId]) {
-        var ev = events.find(function(e){return e.id===evId;});
-        if (ev) blData[evId] = getBl(ev);
+    var targets = events.filter(function(e){ return e.id === evId; }).concat(nearEvents.filter(function(e){ return e.id === evId; }));
+    if (!targets.length) return;
+    var bls = getBl(targets[0]);
+    if (!bls[idx]) return;
+    bls[idx].checked = checked;
+    var checkedNames = bls.filter(function(b){ return b.checked; }).map(function(b){ return b.name; });
+    var val = JSON.stringify(checkedNames);
+    targets.forEach(function(ev) {
+        ev.extendedProperties = ev.extendedProperties || {};
+        ev.extendedProperties.shared = ev.extendedProperties.shared || {};
+        ev.extendedProperties.shared.bl_checked = val;
+    });
+    blData[evId] = bls;
+    localStorage.setItem('sc_bl', JSON.stringify(blData));
+    renderToday(); renderCl(); renderCal();
+    if (currentEvId === evId) showDet(evId);
+    // Googleカレンダーにも保存（他の端末と共有）。閲覧のみのカレンダーはこの端末だけに保存
+    var cal = targets[0]._cal || 'primary';
+    if (accessToken && calInfo(cal).writable) {
+        gapi.client.calendar.events.patch({
+            calendarId: cal, eventId: evId,
+            resource: { extendedProperties: { shared: { bl_checked: val } } }
+        }).catch(handleApiError);
     }
-    if (blData[evId] && blData[evId][idx]) {
-        blData[evId][idx].checked = checked;
-        localStorage.setItem('sc_bl', JSON.stringify(blData));
-    }
-    renderToday(); renderCl();
 }
 
 var currentEvId = null;
 
 function showDet(evId) {
-    var ev = events.find(function(e){return e.id===evId;});
+    var ev = findEv(evId);
     if (!ev) return;
     currentEvId = evId;
     var color = evColor(ev);
     var bls = getBl(ev);
+    var ci = calInfo(ev._cal || 'primary');
     document.getElementById('detTitle').textContent = ev.summary || '（無題）';
-    var html = '<div style="border-left:4px solid ' + color + ';padding-left:14px;margin-bottom:14px"><div style="font-size:13px;color:var(--text2)">' + fmtT(ev) + '</div>' + (ev.description ? '<div style="margin-top:8px;font-size:13px;white-space:pre-wrap;color:var(--text2)">' + ev.description + '</div>' : '') + '</div>';
+    var src = (ev._cal && ev._cal !== 'primary') ? '<div style="margin-top:4px"><span class="cal-src">📅 ' + esc(ci.name) + (ci.writable ? '' : '（閲覧のみ）') + '</span></div>' : '';
+    var html = '<div style="border-left:4px solid ' + color + ';padding-left:14px;margin-bottom:14px"><div style="font-size:13px;color:var(--text2)">' + fmtT(ev) + '</div>' + src + (ev.description ? '<div style="margin-top:8px;font-size:13px;white-space:pre-wrap;color:var(--text2)">' + esc(ev.description) + '</div>' : '') + '</div>';
     if (bls.length) {
-        html += '<div style="font-size:14px;font-weight:700;margin-bottom:8px">🎒 持ち物チェック</div>';
-        html += bls.map(function(b,i) {
-            return '<div class="bl-item' + (b.checked?' checked':'') + '"><input type="checkbox" id="dt-' + evId + '-' + i + '"' + (b.checked?' checked':'') + ' onchange="togBl(\'' + evId + '\',' + i + ',this.checked)"><label for="dt-' + evId + '-' + i + '">' + b.name + '</label></div>';
-        }).join('');
+        var done = bls.filter(function(b){ return b.checked; }).length;
+        html += '<div style="font-size:14px;font-weight:700;margin-bottom:8px">🎒 持ち物チェック <span style="font-size:12px;color:' + (done === bls.length ? '#4CAF50' : 'var(--text2)') + '">' + done + '/' + bls.length + '</span></div>';
+        html += blItemsHtml(ev, 'dt');
     } else {
         html += '<p style="color:var(--text2);font-size:13px">持ち物の登録はありません</p>';
     }
@@ -985,10 +1312,16 @@ function getEvPhotos(evId) {
         return raw.photos || [];
     } catch(e) { return []; }
 }
-function saveEvPhotos(evId, photos) {
-    var ev = events.find(function(e){return e.id===evId;});
-    var date = ev ? (ev.start.date || (ev.start.dateTime ? ev.start.dateTime.substring(0,10) : null)) : null;
-    localStorage.setItem('ev_photos_' + evId, JSON.stringify({ date: date, photos: photos }));
+function saveEvPhotos(evId, photos, dateHint) {
+    var ev = findEv(evId);
+    var date = ev ? evDate(ev) : (dateHint || null);
+    try {
+        localStorage.setItem('ev_photos_' + evId, JSON.stringify({ date: date, photos: photos }));
+        return true;
+    } catch(e) {
+        alert('写真の保存容量がいっぱいです。古い予定の写真を削除してからお試しください。');
+        return false;
+    }
 }
 function cleanupOldPhotos() {
     var cutoff = new Date();
@@ -1058,11 +1391,19 @@ function viewEvPhoto(evId, index) {
 }
 
 function openEdit() {
-    var ev = events.find(function(e){return e.id===currentEvId;});
+    var ev = findEv(currentEvId);
     if (!ev) return;
+    if (!calInfo(ev._cal || 'primary').writable) { alert('このカレンダーは閲覧のみのため編集できません。\n共有の権限を「予定の変更」にしてもらうと編集できます。'); return; }
     var evId = currentEvId; // closeDet()でリセットされる前に保存
     closeDet();
     openAdd();
+
+    // メンバーを反映（以前は編集するとメンバーが外れていた）
+    var names = evMemberNames(ev);
+    document.querySelectorAll('.mcb input').forEach(function(cb) {
+        var m = members.find(function(x){ return x.id === cb.value; });
+        if (m && names.indexOf(m.name) >= 0) { cb.checked = true; updCbLabel(cb); }
+    });
 
     // フォームに既存データを反映
     document.getElementById('evTitle').value = ev.summary || '';
@@ -1081,9 +1422,11 @@ function openEdit() {
         renderBlTags();
     }
 
-    // メモを反映（説明文からメモ部分だけ）
-    var noteMatch = (ev.description||'').match(/📝 (.+)/);
-    if (noteMatch) document.getElementById('evNote').value = noteMatch[1];
+    // メモを反映（メンバー・持ち物の行以外はすべてメモとして残す）
+    var note = (ev.description||'').split('\n').filter(function(l) {
+        return !/^\s*👥/.test(l) && !/持ち物[：:]/.test(l);
+    }).join('\n').replace(/^📝 ?/, '').trim();
+    document.getElementById('evNote').value = note;
 
     // お知らせ設定を反映（localStorage → Googleカレンダーのreminders の順で優先）
     var notifySel = document.getElementById('evNotify');
@@ -1111,18 +1454,23 @@ function openEdit() {
     var btn = document.getElementById('saveBtn');
     btn.textContent = '更新する';
     btn.setAttribute('data-edit-id', evId);
+    btn.setAttribute('data-edit-cal', ev._cal || 'primary');
 }
 
 function deleteEv() {
     if (!currentEvId) return;
-    if (!confirm('この予定を削除しますか？')) return;
+    var ev = findEv(currentEvId);
+    var cal = (ev && ev._cal) || 'primary';
+    if (!calInfo(cal).writable) { alert('このカレンダーは閲覧のみのため削除できません。'); return; }
+    if (!confirm('「' + (ev && ev.summary || '予定') + '」を削除しますか？')) return;
     gapi.client.calendar.events.delete({
-        calendarId: 'primary',
+        calendarId: cal,
         eventId: currentEvId
     }).then(function() {
         closeDet();
-        loadEvents();
+        refreshAll();
     }).catch(function(e) {
+        handleApiError(e);
         alert('削除に失敗しました: ' + (e.result&&e.result.error ? e.result.error.message : e.message));
     });
 }
@@ -1152,6 +1500,7 @@ function closeAdd() {
     var btn = document.getElementById('saveBtn');
     btn.textContent = '保存する';
     btn.removeAttribute('data-edit-id');
+    btn.removeAttribute('data-edit-cal');
     document.getElementById('evNotify').value = '-1';
 }
 
@@ -1176,62 +1525,41 @@ function saveEv() {
     btn.textContent = editId ? '更新中...' : '保存中...';
     btn.disabled = true;
 
-    var promise = editId ? updateEvToApi(editId, data) : saveEvToApi(data);
+    var editCal = btn.getAttribute('data-edit-cal') || 'primary';
+    var promise = editId ? updateEvToApi(editId, data, editCal) : saveEvToApi(data);
     promise.then(function(ok) {
         btn.textContent = editId ? '更新する' : '保存する';
         btn.disabled = false;
-        btn.removeAttribute('data-edit-id');
         if (ok) closeAdd();
     });
 }
 
-function updateEvToApi(evId, data) {
-    var desc = '';
-    if (data.members.length > 0) {
-        var names = data.members.map(function(id) {
-            var m = members.find(function(x){return x.id===id;});
-            return m ? m.name : id;
-        });
-        desc += '👥 ' + names.join('、') + '\n';
-    }
-    if (data.bl.length > 0) desc += '🎒 持ち物：' + data.bl.join('、') + '\n';
-    if (data.note) desc += '📝 ' + data.note;
-
-    var ev = { summary: data.title, description: desc, start: {}, end: {} };
-    if (data.st && data.et) {
-        ev.start = { dateTime: data.date + 'T' + data.st + ':00', timeZone: 'Asia/Tokyo' };
-        ev.end   = { dateTime: data.date + 'T' + data.et + ':00', timeZone: 'Asia/Tokyo' };
-    } else {
-        ev.start = { date: data.date };
-        ev.end   = { date: data.date };
-    }
-
-    // Google Calendarリマインダー設定
-    if (data.notify >= 0) {
-        ev.reminders = { useDefault: false, overrides: [{ method: 'popup', minutes: data.notify }] };
-    } else {
-        ev.reminders = { useDefault: false, overrides: [] };
-    }
+function updateEvToApi(evId, data, calId) {
+    var old = findEv(evId);
+    var ev = buildEvResource(data, null);
+    delete ev.recurrence;
+    // すでにチェック済みの持ち物は、残っている分だけチェック状態を引き継ぐ
+    var prevChecked = old ? getBl(old).filter(function(b){ return b.checked; }).map(function(b){ return b.name; }) : [];
+    ev.extendedProperties.shared.bl_checked = JSON.stringify(prevChecked.filter(function(n){ return data.bl.indexOf(n) >= 0; }));
+    if (!data.members.length) ev.colorId = null;
 
     return gapi.client.calendar.events.patch({
-        calendarId: 'primary',
+        calendarId: calId || 'primary',
         eventId: evId,
         resource: ev
     }).then(function() {
-        if (data.bl.length > 0) {
-            blData[evId] = data.bl.map(function(b){return {name:b,checked:false};});
-            localStorage.setItem('sc_bl', JSON.stringify(blData));
-        }
+        delete blData[evId];
+        localStorage.setItem('sc_bl', JSON.stringify(blData));
         if (data.notify >= 0) {
             notifyData[evId] = data.notify;
         } else {
             delete notifyData[evId];
         }
         localStorage.setItem('sc_notify', JSON.stringify(notifyData));
-        loadEvents();
+        refreshAll();
         return true;
     }).catch(function(e) {
-        console.error(e);
+        handleApiError(e);
         alert('更新に失敗しました: ' + (e.result&&e.result.error ? e.result.error.message : e.message));
         return false;
     });
@@ -1613,8 +1941,11 @@ function resetRepeat() {
 var copyYM = { y: new Date().getFullYear(), m: new Date().getMonth() };
 var selectedDates = [];
 
+var copyEvId = null;
+
 function openCopy() {
     if (!currentEvId) return;
+    copyEvId = currentEvId; // closeDet()でcurrentEvIdが消えるため先に保存
     closeDet();
     selectedDates = [];
     copyYM = { y: new Date().getFullYear(), m: new Date().getMonth() };
@@ -1690,8 +2021,8 @@ function updateCopySelected() {
 }
 
 function execCopy() {
-    if (!currentEvId || !selectedDates.length) return;
-    var ev = events.find(function(e){return e.id===currentEvId;});
+    if (!copyEvId || !selectedDates.length) return;
+    var ev = findEv(copyEvId);
     if (!ev) return;
 
     var btn = document.getElementById('copyExecBtn');
@@ -1701,32 +2032,30 @@ function execCopy() {
     var isAllDay = !!ev.start.date;
     var startTime = isAllDay ? null : ev.start.dateTime.substring(11,16);
     var endTime   = isAllDay ? null : ev.end.dateTime.substring(11,16);
-    var bls = getBl(ev);
+    var count = selectedDates.length;
 
-    // 各日付に順番にコピー
+    // 各日付にコピー（持ち物のチェック状態は未チェックで作る）
     var promises = selectedDates.map(function(ds) {
+        var nd = new Date(ds + 'T00:00:00'); nd.setDate(nd.getDate() + 1);
         var newEv = {
             summary: ev.summary,
             description: ev.description || '',
             colorId: ev.colorId,
             start: isAllDay ? {date: ds} : {dateTime: ds + 'T' + startTime + ':00', timeZone: 'Asia/Tokyo'},
-            end:   isAllDay ? {date: ds} : {dateTime: ds + 'T' + endTime   + ':00', timeZone: 'Asia/Tokyo'}
+            end:   isAllDay ? {date: fmtD(nd)} : {dateTime: ds + 'T' + endTime   + ':00', timeZone: 'Asia/Tokyo'},
+            extendedProperties: { shared: { bl_checked: '[]' } }
         };
-        return gapi.client.calendar.events.insert({calendarId: 'primary', resource: newEv})
-        .then(function(res) {
-            if (bls.length) {
-                blData[res.result.id] = bls.map(function(b){return {name:b.name,checked:false};});
-            }
-        });
+        return gapi.client.calendar.events.insert({calendarId: 'primary', resource: newEv});
     });
 
     Promise.all(promises).then(function() {
-        localStorage.setItem('sc_bl', JSON.stringify(blData));
-        loadEvents();
+        btn.textContent = '📋 コピーする';
+        refreshAll();
         closeCopy();
-        alert(selectedDates.length + '件の日付にコピーしました！');
+        alert(count + '件の日付にコピーしました！');
     }).catch(function(e) {
-        btn.textContent = 'コピーする'; btn.disabled = false;
+        handleApiError(e);
+        btn.textContent = '📋 コピーする'; btn.disabled = false;
         alert('コピーに失敗しました: ' + (e.result&&e.result.error ? e.result.error.message : e.message));
     });
 }
@@ -1784,10 +2113,14 @@ function onFileSelected(input) {
     var reader = new FileReader();
     reader.onload = function(e) {
         var dataUrl = e.target.result;
-        document.getElementById('camPreviewImg').src = dataUrl;
         document.getElementById('camView').style.display = 'none';
         document.getElementById('camLoading').style.display = 'block';
-        analyzeWithGemini(dataUrl.split(',')[1]);
+        // スマホの写真は大きいので、文字が読める程度（長辺1600px）に縮小してから送る
+        compressImage(dataUrl, function(small) {
+            var src = small || dataUrl;
+            document.getElementById('camPreviewImg').src = src;
+            analyzeWithGemini(src.split(',')[1], small ? 'image/jpeg' : (file.type || 'image/jpeg'));
+        }, 1600, 0.9);
     };
     reader.readAsDataURL(file);
     input.value = '';
@@ -1807,14 +2140,16 @@ function closeCam() {
     document.getElementById('camModal').style.display = 'none';
 }
 
-function analyzeWithGemini(base64) {
+function analyzeWithGemini(base64, mimeType) {
     if (!GEMINI_KEY) {
         document.getElementById('camLoading').style.display = 'none';
         document.getElementById('camError').style.display = 'block';
         document.getElementById('camErrMsg').textContent = '設定タブでGemini APIキーを設定してください。';
         return;
     }
-    var prompt = '画像を詳しく読み取り、すべてのスケジュール情報を抽出してください。\n\n対象：学校のお便り・行事予定表・習い事の案内・病院の予約票・イベントチラシなど\n\n抽出ルール：\n- 画像内に複数の予定がある場合はすべて抽出する\n- タイトル：行事名・予定名（簡潔に）\n- 日付：年が省略されていれば2026年または2027年で推測\n- 時刻：「○時○分」「○:○○」形式を読み取る\n- 持ち物：「持ち物」「準備するもの」「必要なもの」欄を読み取る\n- メモ：集合場所・注意事項など重要な補足情報\n\n必ず以下のJSON配列形式のみで回答（説明文・コードブロック不要）:\n[{"title":"予定名","date":"YYYY-MM-DD","startTime":"HH:MM","endTime":"HH:MM","belongings":["持ち物1"],"notes":"メモ"}]\n\n予定が1件のみでも配列で返すこと。情報がない項目はnullにしてください。';
+    var td = new Date();
+    var todayStr = td.getFullYear() + '年' + (td.getMonth()+1) + '月' + td.getDate() + '日';
+    var prompt = '画像を詳しく読み取り、すべてのスケジュール情報を抽出してください。\n\n対象：学校のお便り・行事予定表・習い事の案内・病院の予約票・イベントチラシなど\n\n抽出ルール：\n- 画像内に複数の予定がある場合はすべて抽出する\n- タイトル：行事名・予定名（簡潔に。カタカナの読み間違いに注意し、漢字表記があれば漢字で）\n- 日付：今日は' + todayStr + '。年が省略されていれば、今日以降で最も近い日付になる年で推測\n- 時刻：「○時○分」「○:○○」形式を読み取る\n- 持ち物：「持ち物」「準備するもの」「必要なもの」欄を読み取る\n- メモ：集合場所・注意事項など重要な補足情報\n\n必ず以下のJSON配列形式のみで回答（説明文・コードブロック不要）:\n[{"title":"予定名","date":"YYYY-MM-DD","startTime":"HH:MM","endTime":"HH:MM","belongings":["持ち物1"],"notes":"メモ"}]\n\n予定が1件のみでも配列で返すこと。情報がない項目はnullにしてください。';
 
     fetch('https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=' + GEMINI_KEY, {
         method: 'POST',
@@ -1823,7 +2158,7 @@ function analyzeWithGemini(base64) {
             contents: [{
                 parts: [
                     {text: prompt},
-                    {inline_data: {mime_type: 'image/jpeg', data: base64}}
+                    {inline_data: {mime_type: mimeType || 'image/jpeg', data: base64}}
                 ]
             }],
             generationConfig: {temperature: 0.1}
@@ -1859,66 +2194,106 @@ function showOcrResult() {
     document.getElementById('camLoading').style.display = 'none';
     document.getElementById('camResult').style.display = 'block';
 
-    var list = Array.isArray(ocrData) ? ocrData : [ocrData];
+    var list = (Array.isArray(ocrData) ? ocrData : [ocrData]).filter(Boolean);
+    var inp ='width:100%;padding:6px 8px;border:1px solid var(--border);border-radius:6px;font-size:13px;font-family:inherit;margin-top:4px';
+    var memOpts = '<option value="">（メンバー未選択）</option>' + members.map(function(m) {
+        return '<option value="' + esc(m.id) + '">' + esc(m.name) + '</option>';
+    }).join('');
     var html = '';
+    // 読み取った内容はその場で直してから登録できる（誤読対策）
     list.forEach(function(d, i) {
-        var label = (d.title || '（タイトルなし）');
-        var sub = [];
-        if (d.date) sub.push(d.date);
-        if (d.startTime) sub.push(d.startTime + (d.endTime ? '～' + d.endTime : ''));
-        if (d.belongings && d.belongings.length) sub.push('持ち物:' + d.belongings.join('・'));
-        html += '<label style="display:flex;align-items:flex-start;gap:8px;padding:6px 0;border-bottom:1px solid #eee;cursor:pointer">'
-            + '<input type="checkbox" data-idx="' + i + '" checked style="margin-top:3px;width:16px;height:16px;flex-shrink:0">'
-            + '<span><strong style="font-size:13px">' + label + '</strong>'
-            + (sub.length ? '<br><span style="font-size:11px;color:var(--text2)">' + sub.join('　') + '</span>' : '')
-            + (d.notes ? '<br><span style="font-size:11px;color:var(--text2)">📝' + d.notes + '</span>' : '')
-            + '</span></label>';
+        html += '<div class="ocr-item" data-idx="' + i + '" style="padding:8px 0;border-bottom:1px solid #C8E6C9">'
+            + '<label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:13px;font-weight:700">'
+            + '<input type="checkbox" class="ocr-on" checked style="width:16px;height:16px">登録する</label>'
+            + '<input class="ocr-title" value="' + esc(d.title || '') + '" placeholder="予定名" style="' + inp + '">'
+            + '<div style="display:grid;grid-template-columns:1.4fr 1fr 1fr;gap:4px">'
+            + '<input type="date" class="ocr-date" value="' + esc(d.date || '') + '" style="' + inp + '">'
+            + '<input type="time" class="ocr-st" value="' + esc(d.startTime || '') + '" style="' + inp + '">'
+            + '<input type="time" class="ocr-et" value="' + esc(d.endTime || '') + '" style="' + inp + '"></div>'
+            + '<input class="ocr-bl" value="' + esc((d.belongings || []).join('、')) + '" placeholder="持ち物（、区切り）" style="' + inp + '">'
+            + '<select class="ocr-mem" style="' + inp + '">' + memOpts + '</select>'
+            + '<input class="ocr-note" value="' + esc(d.notes || '') + '" placeholder="メモ" style="' + inp + '">'
+            + '</div>';
     });
-    document.getElementById('ocrFields').innerHTML = html || '<p style="color:var(--text2);font-size:13px">情報を読み取れませんでした</p>';
+    html += '<label style="display:flex;align-items:center;gap:8px;margin-top:8px;font-size:12px;cursor:pointer"><input type="checkbox" id="ocrAttachPhoto" checked style="width:16px;height:16px">この写真を予定に添付する（持ち物確認用）</label>';
+    document.getElementById('ocrFields').innerHTML = list.length ? html : '<p style="color:var(--text2);font-size:13px">情報を読み取れませんでした</p>';
+}
+
+// 画像を長辺600pxのJPEGに縮小（端末内保存の容量対策）
+function compressImage(dataUrl, cb, maxSize, quality) {
+    var img = new Image();
+    img.onload = function() {
+        var max = maxSize || 600, w = img.width, h = img.height;
+        if (w > max || h > max) {
+            if (w > h) { h = Math.round(h * max / w); w = max; }
+            else { w = Math.round(w * max / h); h = max; }
+        }
+        var cv = document.createElement('canvas');
+        cv.width = w; cv.height = h;
+        cv.getContext('2d').drawImage(img, 0, 0, w, h);
+        cb(cv.toDataURL('image/jpeg', quality || 0.8));
+    };
+    img.onerror = function() { cb(null); };
+    img.src = dataUrl;
 }
 
 function applyOcr() {
     if (!ocrData) return;
-    var list = Array.isArray(ocrData) ? ocrData : [ocrData];
-    var checks = document.querySelectorAll('#ocrFields input[type=checkbox]');
-    var selected = [];
-    checks.forEach(function(cb) {
-        if (cb.checked) selected.push(list[parseInt(cb.getAttribute('data-idx'))]);
+    if (!accessToken) { alert('ログインしてからお試しください'); return; }
+    var items = [];
+    var missingDate = 0;
+    document.querySelectorAll('#ocrFields .ocr-item').forEach(function(el) {
+        if (!el.querySelector('.ocr-on').checked) return;
+        var title = el.querySelector('.ocr-title').value.trim();
+        var date = el.querySelector('.ocr-date').value;
+        if (!title || !date) { missingDate++; return; }
+        var mem = el.querySelector('.ocr-mem').value;
+        items.push({
+            title: title, date: date,
+            st: el.querySelector('.ocr-st').value,
+            et: el.querySelector('.ocr-et').value,
+            members: mem ? [mem] : [],
+            bl: el.querySelector('.ocr-bl').value.split(/[、,・\s]+/).map(function(s){ return s.trim(); }).filter(Boolean),
+            note: el.querySelector('.ocr-note').value.trim(),
+            notify: -1
+        });
     });
-    if (selected.length === 0) { alert('予定を選択してください'); return; }
-    closeCam();
-    // 複数件は順次登録
-    var token = accessToken;
-    var year = new Date().getFullYear();
-    var done = 0;
-    selected.forEach(function(d) {
-        var ev = { summary: d.title || '（無題）' };
-        if (d.date) {
-            if (d.startTime) {
-                ev.start = { dateTime: d.date + 'T' + d.startTime + ':00', timeZone: 'Asia/Tokyo' };
-                var et = d.endTime || (function(){ var h=parseInt(d.startTime)+1; return (h<10?'0':'')+h+d.startTime.substring(2); })();
-                ev.end   = { dateTime: d.date + 'T' + et + ':00', timeZone: 'Asia/Tokyo' };
-            } else {
-                ev.start = { date: d.date };
-                ev.end   = { date: d.date };
-            }
+    if (missingDate) { alert('予定名か日付が空の予定が' + missingDate + '件あります。入力するか、チェックを外してください。'); return; }
+    if (!items.length) { alert('登録する予定を選んでください'); return; }
+    var attach = document.getElementById('ocrAttachPhoto') && document.getElementById('ocrAttachPhoto').checked;
+    var photoSrc = document.getElementById('camPreviewImg').src;
+    var btn = document.querySelector('#camResult .btn-s');
+    if (btn) { btn.disabled = true; btn.textContent = '登録中...'; }
+
+    // 1件ずつ順番に登録し、成功・失敗をまとめて知らせる
+    var ok = 0, ng = 0, ids = [];
+    items.reduce(function(p, data) {
+        return p.then(function() {
+            return saveEvToApi(data, { rrule: null, noReload: true, silent: true }).then(function(id) {
+                if (id) { ok++; if (typeof id === 'string') ids.push({ id: id, date: data.date }); } else ng++;
+            });
+        });
+    }, Promise.resolve()).then(function() {
+        var finish = function() {
+            if (btn) { btn.disabled = false; btn.textContent = '選択した予定を登録'; }
+            closeCam();
+            refreshAll();
+            alert(ok + '件の予定を登録しました' + (ng ? '（' + ng + '件は失敗しました）' : '') + '！');
+        };
+        if (attach && ids.length && photoSrc && photoSrc.indexOf('data:') === 0) {
+            compressImage(photoSrc, function(small) {
+                if (small) ids.forEach(function(x) { saveEvPhotos(x.id, [small], x.date); });
+                finish();
+            });
+        } else {
+            finish();
         }
-        if (d.notes) ev.description = d.notes;
-        if (d.belongings && d.belongings.length) ev.description = (ev.description ? ev.description + '\n' : '') + '持ち物：' + d.belongings.join('、');
-        ev.reminders = { useDefault: false, overrides: [{ method: 'popup', minutes: 30 }] };
-        fetch('https://www.googleapis.com/calendar/v3/calendars/primary/events', {
-            method: 'POST',
-            headers: { Authorization: 'Bearer ' + token, 'Content-Type': 'application/json' },
-            body: JSON.stringify(ev)
-        }).then(function() {
-            done++;
-            if (done === selected.length) {
-                alert(selected.length + '件の予定を登録しました！');
-                loadEvents();
-            }
-        }).catch(function(e) { console.error(e); });
     });
 }
+
+// ログイン前でもメンバー・持ち物プリセット・カレンダー枠を表示しておく
+initUI();
+uiInited = true;
 
 </script>
 
