@@ -1495,6 +1495,7 @@ function openAdd() {
 function openAddWithDate(ds) { openAdd(); document.getElementById('evDate').value = ds; }
 function closeAdd() {
     document.getElementById('addModal').style.display = 'none';
+    cancelVoice();
     stopRec();
     resetRepeat();
     var btn = document.getElementById('saveBtn');
@@ -1642,6 +1643,8 @@ function openAddAndVoice() {
     startRec();
 }
 function startRec() {
+    // Geminiのキーがあれば、録音した音声をそのままGeminiに渡して聞き取る（家族の名前や日時の精度が高い）
+    if (GEMINI_KEY) { startGeminiVoice(); return; }
     var SR = window.SpeechRecognition || window.webkitSpeechRecognition;
     if (!SR) { alert('音声入力はChromeでご利用ください（HTTPS接続が必要です）'); return; }
     recog = new SR();
@@ -1660,7 +1663,13 @@ function startRec() {
         var geminiErrors = ['service-not-allowed', 'network', 'language-not-supported'];
         if (geminiErrors.indexOf(e.error) !== -1) {
             stopRec();
-            startGeminiVoiceFallback();
+            if (!GEMINI_KEY) {
+                alert('音声認識サービスが利用できません。\n設定タブでGemini APIキーを設定するとGemini音声認識が使えます。\nタイトル欄に直接入力してください。');
+                var t = document.getElementById('evTitle');
+                if (t) t.focus();
+                return;
+            }
+            startGeminiVoice();
         } else if (e.error !== 'no-speech' && e.error !== 'aborted') {
             alert('音声認識エラー: ' + e.error);
             stopRec();
@@ -1675,42 +1684,79 @@ function startRec() {
     var fab = document.getElementById('voiceFab');
     if (fab) { fab.classList.add('rec'); fab.innerHTML = '&#9209;'; }
 }
+var geminiRecorder = null;
+
 function stopRec() {
-    if (recog) { recog.stop(); recog = null; } isRec = false;
+    if (recog) { recog.stop(); recog = null; }
+    // Gemini録音中なら録音を止める（止まると onstop で解析が始まる）
+    if (geminiRecorder && geminiRecorder.state === 'recording') { geminiRecorder.stop(); return; }
+    isRec = false;
     var btn = document.getElementById('voiceBtn');
     if (btn) { btn.classList.remove('rec'); btn.innerHTML = '&#127897;'; }
     var fab = document.getElementById('voiceFab');
     if (fab) { fab.classList.remove('rec'); fab.innerHTML = '&#127897;'; }
 }
-function startGeminiVoiceFallback() {
-    if (!GEMINI_KEY) {
-        alert('音声認識サービスが利用できません。\n設定タブでGemini APIキーを設定するとGemini音声認識が使えます。\nタイトル欄に直接入力してください。');
-        var t = document.getElementById('evTitle');
-        if (t) t.focus();
-        return;
+
+// 録音を解析せずに捨てる（予定の追加画面を閉じたとき）
+function cancelVoice() {
+    if (geminiRecorder && geminiRecorder.state === 'recording') {
+        geminiRecorder.cancelled = true;
+        geminiRecorder.stop();
     }
-    navigator.mediaDevices.getUserMedia({ audio: true })
+}
+
+function setVoiceButtons(label, fabIcon) {
+    var btn = document.getElementById('voiceBtn');
+    var fab = document.getElementById('voiceFab');
+    if (btn) { btn.classList.add('rec'); btn.innerHTML = label; }
+    if (fab) { fab.classList.add('rec'); fab.innerHTML = fabIcon; }
+}
+
+// 録音して、音声をそのままGeminiに渡す。話し終わり（約2秒の無音）で自動停止、最長30秒
+function startGeminiVoice() {
+    if (geminiRecorder && geminiRecorder.state === 'recording') return;
+    navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true } })
     .then(function(stream) {
         var chunks = [];
         var mt = MediaRecorder.isTypeSupported('audio/webm;codecs=opus') ? 'audio/webm;codecs=opus'
                 : MediaRecorder.isTypeSupported('audio/webm') ? 'audio/webm' : 'audio/mp4';
         var mr = new MediaRecorder(stream, { mimeType: mt });
+        geminiRecorder = mr;
         isRec = true;
-        var btn = document.getElementById('voiceBtn');
-        var fab = document.getElementById('voiceFab');
-        if (btn) { btn.classList.add('rec'); btn.innerHTML = '&#9209; Gemini録音中（タップで停止）'; btn.onclick = function(){ mr.stop(); }; }
-        if (fab) { fab.classList.add('rec'); fab.innerHTML = '&#9209;'; fab.onclick = function(){ mr.stop(); }; }
-        var timeout = setTimeout(function(){ mr.stop(); }, 15000);
+        setVoiceButtons('&#9209; 話してください（タップで終了）', '&#9209;');
+
+        // 無音の検出（話し始めてから約2秒の無音で止める）
+        var ctx = null, timer = null, spoke = false, silentSince = Date.now();
+        try {
+            ctx = new (window.AudioContext || window.webkitAudioContext)();
+            var analyser = ctx.createAnalyser();
+            analyser.fftSize = 1024;
+            ctx.createMediaStreamSource(stream).connect(analyser);
+            var buf = new Uint8Array(analyser.fftSize);
+            timer = setInterval(function() {
+                analyser.getByteTimeDomainData(buf);
+                var sum = 0;
+                for (var i = 0; i < buf.length; i++) { var v = (buf[i] - 128) / 128; sum += v * v; }
+                var loud = Math.sqrt(sum / buf.length) > 0.03;
+                if (loud) { spoke = true; silentSince = Date.now(); }
+                else if (spoke && Date.now() - silentSince > 2000 && mr.state === 'recording') mr.stop();
+            }, 100);
+        } catch (e) { /* 無音検出が使えない端末はタップか30秒で停止 */ }
+        var maxTimer = setTimeout(function(){ if (mr.state === 'recording') mr.stop(); }, 30000);
+
         mr.ondataavailable = function(e){ if (e.data.size > 0) chunks.push(e.data); };
         mr.onstop = function() {
-            clearTimeout(timeout);
+            clearTimeout(maxTimer);
+            if (timer) clearInterval(timer);
+            if (ctx) ctx.close();
             stream.getTracks().forEach(function(t){ t.stop(); });
-            if (btn) btn.innerHTML = '&#128260; 解析中...';
-            if (fab) fab.innerHTML = '&#128260;';
+            geminiRecorder = null;
+            if (mr.cancelled) { isRec = false; stopRec(); return; }
+            setVoiceButtons('&#128260; AIが聞き取り中...', '&#128260;');
             var blob = new Blob(chunks, { type: mt });
             var reader = new FileReader();
             reader.onload = function() {
-                transcribeWithGemini(reader.result.split(',')[1], mt.split(';')[0]);
+                analyzeVoiceWithGemini(reader.result.split(',')[1], mt.split(';')[0]);
             };
             reader.readAsDataURL(blob);
         };
@@ -1718,6 +1764,7 @@ function startGeminiVoiceFallback() {
     })
     .catch(function(err) {
         alert('マイクにアクセスできません: ' + err.message);
+        geminiRecorder = null;
         stopRec();
     });
 }
@@ -1756,30 +1803,71 @@ function geminiGenerate(body) {
     return tryAt(0);
 }
 
-function transcribeWithGemini(base64, mimeType) {
+// 音声から、聞き取り（文字起こし）と予定の読み取りを一度に行う
+function analyzeVoiceWithGemini(base64, mimeType) {
+    var td = new Date();
+    var days = ['日','月','火','水','木','金','土'];
+    var pad2 = function(n){ return String(n).padStart(2, '0'); };
+    var todayStr = td.getFullYear() + '-' + pad2(td.getMonth()+1) + '-' + pad2(td.getDate()) + '（' + days[td.getDay()] + '曜日）';
+    var memberNames = members.map(function(m){ return m.name; });
+    var prompt = [
+        'この音声は、家族の予定を登録するために話した日本語です。聞き取って、予定の内容を読み取ってください。',
+        '',
+        '■ 前提',
+        '- 今日は ' + todayStr + '。「今日」「明日」「明後日」「来週の水曜」「今週末」「10日」（月なし）などは、今日を基準に YYYY-MM-DD に直す。月なしの日付は今日以降で最も近い日。',
+        '- 家族のメンバー: ' + memberNames.join('、') + '。話の中のメンバー名（「リコの」「ユメが」など）は、この一覧の表記に合わせて members に入れる。聞き取りにくい名前も、この一覧の中で音が近いものを選ぶ。',
+        '- 時刻は24時間制 HH:MM。「3時半」は午後と明示されていなくても、学校・習い事・病院など一般的な時間帯から判断する（朝の時間帯と分かるもの以外は午後）。「午前」「午後」「朝」「夜」があればそれに従う。',
+        '- 「〜から1時間」「〜まで」があれば endTime を出す。なければ空文字。',
+        '',
+        '■ 読み取る項目',
+        '- transcript: 聞き取った文章（句読点つき）',
+        '- title: 予定名だけを簡潔に（日時・メンバー名・持ち物・「登録して」などの指示語は含めない）',
+        '- belongings: 持ち物（「お弁当と水筒を持って」なども1品ずつ）',
+        '- repeatWeekdays: 「毎週水曜」のような繰り返しがあれば SU,MO,TU,WE,TH,FR,SA で。なければ空配列',
+        '- notes: 場所や補足があれば短く。なければ空文字',
+        '- 聞き取れない部分は推測しすぎず、聞き取れた範囲で答える'
+    ].join('\n');
+    var schema = {
+        type: 'OBJECT',
+        properties: {
+            transcript: { type: 'STRING' },
+            title: { type: 'STRING' },
+            date: { type: 'STRING', description: 'YYYY-MM-DD。分からなければ空文字' },
+            startTime: { type: 'STRING', description: 'HH:MM または空文字' },
+            endTime: { type: 'STRING', description: 'HH:MM または空文字' },
+            members: { type: 'ARRAY', items: { type: 'STRING' } },
+            belongings: { type: 'ARRAY', items: { type: 'STRING' } },
+            repeatWeekdays: { type: 'ARRAY', items: { type: 'STRING' } },
+            notes: { type: 'STRING' }
+        },
+        required: ['transcript', 'title', 'date', 'startTime', 'endTime', 'members', 'belongings', 'repeatWeekdays', 'notes'],
+        propertyOrdering: ['transcript', 'title', 'date', 'startTime', 'endTime', 'members', 'belongings', 'repeatWeekdays', 'notes']
+    };
     geminiGenerate({
         contents: [{ parts: [
-            { text: 'この音声を文字起こしして、テキストのみを返してください。日本語なら日本語で返してください。' },
+            { text: prompt },
             { inline_data: { mime_type: mimeType, data: base64 } }
         ]}],
-        generationConfig: { temperature: 0 }
+        generationConfig: { temperature: 0, responseMimeType: 'application/json', responseSchema: schema }
     })
     .then(function(text) {
-        var transcript = text.trim();
-        var parsed = parseVoiceInput(transcript);
-        applyVoiceParsed(parsed, transcript);
+        var p = JSON.parse(text);
+        if (!p.transcript && !p.title) throw new Error('音声を聞き取れませんでした。もう一度お話しください。');
+        applyVoiceParsed({
+            title: p.title, date: p.date, startTime: p.startTime, endTime: p.endTime,
+            belongings: p.belongings || [], members: p.members || [], repeatWeekdays: p.repeatWeekdays || [],
+            notes: p.notes, ai: true
+        }, p.transcript || '');
     })
     .catch(function(e) {
-        alert('Gemini音声認識エラー: ' + e.message + '\nタイトル欄に直接入力してください。');
+        alert('音声の読み取りに失敗しました: ' + e.message + '\nもう一度試すか、直接入力してください。');
         var t = document.getElementById('evTitle');
         if (t) t.focus();
     })
     .finally(function() {
+        isRec = false;
+        geminiRecorder = null;
         stopRec();
-        var btn = document.getElementById('voiceBtn');
-        var fab = document.getElementById('voiceFab');
-        if (btn) btn.onclick = toggleVoice;
-        if (fab) fab.onclick = openAddAndVoice;
     });
 }
 
@@ -1898,16 +1986,39 @@ function applyVoiceParsed(p, original) {
     if (p.startTime) document.getElementById('evStart').value = p.startTime;
     if (p.endTime)   document.getElementById('evEnd').value   = p.endTime;
 
-    // 持ち物をpendingBlに追加
+    // 持ち物をpendingBlに追加（同じものは重ねない）
     if (p.belongings && p.belongings.length > 0) {
-        pendingBl = pendingBl.concat(p.belongings);
+        p.belongings.forEach(function(b) { if (b && pendingBl.indexOf(b) < 0) pendingBl.push(b); });
         renderBlTags();
         renderBlPresets();
     }
 
-    // 未解析項目があれば元テキストをメモに
-    if (!p.date || !p.startTime) {
-        var note = document.getElementById('evNote');
+    // 話の中に出てきたメンバーを選ぶ
+    (p.members || []).forEach(function(name) {
+        var m = members.find(function(x){ return x.name === name; });
+        var cb = m && document.getElementById('mc-' + m.id);
+        if (cb && !cb.checked) { cb.checked = true; updCbLabel(cb); }
+    });
+
+    // 「毎週◯曜」の繰り返し
+    var dows = (p.repeatWeekdays || []).filter(function(d){ return /^(SU|MO|TU|WE|TH|FR|SA)$/.test(d); });
+    if (dows.length) {
+        document.getElementById('repeatOn').checked = true;
+        document.getElementById('repeatOptions').style.display = 'block';
+        document.querySelectorAll('.dow-btn').forEach(function(btn) {
+            btn.classList.toggle('selected', dows.indexOf(btn.getAttribute('data-dow')) >= 0);
+        });
+    }
+
+    var note = document.getElementById('evNote');
+    if (p.ai) {
+        // AIの読み取り：補足をメモに入れ、聞き取った文章も残しておく（確認用）
+        var lines = [];
+        if (p.notes) lines.push(p.notes);
+        if (original) lines.push('【音声】' + original);
+        if (note && lines.length && !note.value) note.value = lines.join('\n');
+    } else if (!p.date || !p.startTime) {
+        // パターン方式で読み取れなかった項目があれば元テキストをメモに
         if (note && !note.value) note.value = '【音声】' + original;
     }
 }
