@@ -1721,22 +1721,51 @@ function startGeminiVoiceFallback() {
         stopRec();
     });
 }
-function transcribeWithGemini(base64, mimeType) {
-    fetch('https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=' + GEMINI_KEY, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-            contents: [{ parts: [
-                { text: 'この音声を文字起こしして、テキストのみを返してください。日本語なら日本語で返してください。' },
-                { inline_data: { mime_type: mimeType, data: base64 } }
-            ]}],
-            generationConfig: { temperature: 0 }
+// 無料枠で使える中で精度の高い順。使えないモデル（廃止・枠切れ）は次に切り替える
+var GEMINI_MODELS = ['gemini-3.8-flash', 'gemini-3.6-flash', 'gemini-2.5-flash'];
+
+function geminiGenerate(body) {
+    var preferred = localStorage.getItem('gemini_model');
+    var order = preferred && GEMINI_MODELS.indexOf(preferred) >= 0
+        ? [preferred].concat(GEMINI_MODELS.filter(function(m){ return m !== preferred; }))
+        : GEMINI_MODELS.slice();
+    var lastErr = null;
+    function tryAt(i) {
+        if (i >= order.length) return Promise.reject(lastErr || new Error('Geminiに接続できませんでした'));
+        var model = order[i];
+        return fetch('https://generativelanguage.googleapis.com/v1beta/models/' + model + ':generateContent?key=' + GEMINI_KEY, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(body)
         })
+        .then(function(r) { return r.json(); })
+        .then(function(data) {
+            if (data.error) {
+                lastErr = new Error('APIエラー: ' + data.error.message + ' (code:' + data.error.code + ')');
+                // モデルが無い・使えない・無料枠を超えた場合は次のモデルで再試行
+                if ([400, 403, 404, 429].indexOf(data.error.code) >= 0 && !/API key/i.test(data.error.message)) return tryAt(i + 1);
+                throw lastErr;
+            }
+            var parts = data.candidates && data.candidates[0] && data.candidates[0].content && data.candidates[0].content.parts;
+            if (!parts) throw new Error('解析結果なし');
+            localStorage.setItem('gemini_model', model);
+            // 思考の要約などが混ざる場合に備え、本文のテキストだけをつなぐ
+            return parts.filter(function(p){ return p.text && !p.thought; }).map(function(p){ return p.text; }).join('');
+        });
+    }
+    return tryAt(0);
+}
+
+function transcribeWithGemini(base64, mimeType) {
+    geminiGenerate({
+        contents: [{ parts: [
+            { text: 'この音声を文字起こしして、テキストのみを返してください。日本語なら日本語で返してください。' },
+            { inline_data: { mime_type: mimeType, data: base64 } }
+        ]}],
+        generationConfig: { temperature: 0 }
     })
-    .then(function(r){ return r.json(); })
-    .then(function(data) {
-        if (data.error) throw new Error(data.error.message);
-        var transcript = data.candidates[0].content.parts[0].text.trim();
+    .then(function(text) {
+        var transcript = text.trim();
         var parsed = parseVoiceInput(transcript);
         applyVoiceParsed(parsed, transcript);
     })
@@ -2115,12 +2144,12 @@ function onFileSelected(input) {
         var dataUrl = e.target.result;
         document.getElementById('camView').style.display = 'none';
         document.getElementById('camLoading').style.display = 'block';
-        // スマホの写真は大きいので、文字が読める程度（長辺1600px）に縮小してから送る
+        // スマホの写真は大きいので縮小して送る。お便りの小さい文字が読めるよう長辺2400pxは残す
         compressImage(dataUrl, function(small) {
             var src = small || dataUrl;
             document.getElementById('camPreviewImg').src = src;
             analyzeWithGemini(src.split(',')[1], small ? 'image/jpeg' : (file.type || 'image/jpeg'));
-        }, 1600, 0.9);
+        }, 2400, 0.92);
     };
     reader.readAsDataURL(file);
     input.value = '';
@@ -2148,38 +2177,72 @@ function analyzeWithGemini(base64, mimeType) {
         return;
     }
     var td = new Date();
-    var todayStr = td.getFullYear() + '年' + (td.getMonth()+1) + '月' + td.getDate() + '日';
-    var prompt = '画像を詳しく読み取り、すべてのスケジュール情報を抽出してください。\n\n対象：学校のお便り・行事予定表・習い事の案内・病院の予約票・イベントチラシなど\n\n抽出ルール：\n- 画像内に複数の予定がある場合はすべて抽出する\n- タイトル：行事名・予定名（簡潔に。カタカナの読み間違いに注意し、漢字表記があれば漢字で）\n- 日付：今日は' + todayStr + '。年が省略されていれば、今日以降で最も近い日付になる年で推測\n- 時刻：「○時○分」「○:○○」形式を読み取る\n- 持ち物：「持ち物」「準備するもの」「必要なもの」欄を読み取る\n- メモ：集合場所・注意事項など重要な補足情報\n\n必ず以下のJSON配列形式のみで回答（説明文・コードブロック不要）:\n[{"title":"予定名","date":"YYYY-MM-DD","startTime":"HH:MM","endTime":"HH:MM","belongings":["持ち物1"],"notes":"メモ"}]\n\n予定が1件のみでも配列で返すこと。情報がない項目はnullにしてください。';
+    var days = ['日','月','火','水','木','金','土'];
+    var todayStr = td.getFullYear() + '年' + (td.getMonth()+1) + '月' + td.getDate() + '日（' + days[td.getDay()] + '）';
+    var memberNames = members.map(function(m){ return m.name; });
+    // 登録済みの予定を渡して、二重登録になりそうなものをAIに見分けてもらう
+    var known = {};
+    events.concat(nearEvents).forEach(function(e) { known[evDate(e) + ' ' + (e.summary || '')] = true; });
+    var knownList = Object.keys(known).sort().slice(0, 150);
 
-    fetch('https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=' + GEMINI_KEY, {
-        method: 'POST',
-        headers: {'Content-Type': 'application/json'},
-        body: JSON.stringify({
-            contents: [{
-                parts: [
-                    {text: prompt},
-                    {inline_data: {mime_type: mimeType || 'image/jpeg', data: base64}}
-                ]
-            }],
-            generationConfig: {temperature: 0.1}
-        })
-    })
-    .then(function(r) { return r.json(); })
-    .then(function(data) {
-        if (data.error) throw new Error('APIエラー: ' + data.error.message + ' (code:' + data.error.code + ')');
-        if (!data.candidates || !data.candidates[0]) throw new Error('解析結果なし');
-        var text = data.candidates[0].content.parts[0].text;
-        // 配列または単体オブジェクトを抽出
-        var arrMatch = text.match(/\[[\s\S]*\]/);
-        var objMatch = text.match(/\{[\s\S]*\}/);
-        if (arrMatch) {
-            ocrData = JSON.parse(arrMatch[0]);
-            if (!Array.isArray(ocrData)) ocrData = [ocrData];
-        } else if (objMatch) {
-            ocrData = [JSON.parse(objMatch[0])];
-        } else {
-            throw new Error('JSON抽出失敗。AI応答: ' + text.substring(0,100));
+    var prompt = [
+        'あなたは家族の予定表づくりを手伝う秘書です。画像（学校・保育園のお便り、行事予定表、習い事の案内、病院の予約票、チラシなど）から、予定をすべて正確に抽出してください。',
+        '',
+        '■ 前提',
+        '- 今日は' + todayStr + '。年が書かれていない日付は、今日以降で最も近い年にする（年度の予定表は4月〜翌3月）。',
+        '- 曜日が書かれている場合は、日付と曜日が合っているか確かめ、合う年・日付を選ぶ。',
+        '- 家族のメンバー: ' + memberNames.join('、') + '。お便りの宛名・クラス名・名前から誰の予定か分かれば member に入れる。分からなければ空文字。',
+        '',
+        '■ 抽出ルール',
+        '- 表形式の予定表は1行ずつ漏れなく読む。1日に複数の行事があれば別々の予定にする。',
+        '- 期間の行事（例: 10/1〜10/3）は開始日の予定1件にし、notes に期間を書く。',
+        '- title は行事名を簡潔に。手書き・小さい文字も読み、読めない字は推測せず notes に「判読困難」と書く。',
+        '- startTime / endTime は 24時間制 HH:MM。書かれていなければ空文字。',
+        '- belongings は「持ち物」「準備するもの」「必要なもの」などの項目を1品ずつ。',
+        '- notes には集合場所・服装・提出物・注意事項など大事な補足を短く。',
+        '- 祝日・学校以外のカレンダーの印字だけのもの（例: 「祝日」だけの欄）は含めない。',
+        '',
+        '■ すでに登録済みの予定（日付 予定名）。同じ日に同じ内容の予定があれば alreadyRegistered を true にする:',
+        knownList.length ? knownList.join('\n') : '（なし）'
+    ].join('\n');
+
+    var schema = {
+        type: 'ARRAY',
+        items: {
+            type: 'OBJECT',
+            properties: {
+                title: { type: 'STRING' },
+                date: { type: 'STRING', description: 'YYYY-MM-DD' },
+                startTime: { type: 'STRING', description: 'HH:MM または空文字' },
+                endTime: { type: 'STRING', description: 'HH:MM または空文字' },
+                belongings: { type: 'ARRAY', items: { type: 'STRING' } },
+                notes: { type: 'STRING' },
+                member: { type: 'STRING', description: '次のいずれか、分からなければ空文字: ' + memberNames.join('、') },
+                alreadyRegistered: { type: 'BOOLEAN' }
+            },
+            required: ['title', 'date', 'startTime', 'endTime', 'belongings', 'notes', 'member', 'alreadyRegistered'],
+            propertyOrdering: ['date', 'title', 'startTime', 'endTime', 'belongings', 'notes', 'member', 'alreadyRegistered']
         }
+    };
+
+    geminiGenerate({
+        contents: [{ parts: [
+            { text: prompt },
+            { inline_data: { mime_type: mimeType || 'image/jpeg', data: base64 } }
+        ]}],
+        // 形を指定してJSONで受け取る（読み取り結果の崩れによる失敗を防ぐ）
+        generationConfig: { temperature: 0, responseMimeType: 'application/json', responseSchema: schema }
+    })
+    .then(function(text) {
+        var parsed;
+        try { parsed = JSON.parse(text); }
+        catch (e) {
+            var m = text.match(/\[[\s\S]*\]/);
+            if (!m) throw new Error('読み取り結果を解釈できませんでした。もう一度撮影してください。');
+            parsed = JSON.parse(m[0]);
+        }
+        ocrData = (Array.isArray(parsed) ? parsed : [parsed]).filter(function(d){ return d && (d.title || d.date); });
+        ocrData.sort(function(a, b){ return (a.date || '').localeCompare(b.date || '') || (a.startTime || '').localeCompare(b.startTime || ''); });
         showOcrResult();
     })
     .catch(function(e) {
@@ -2202,16 +2265,22 @@ function showOcrResult() {
     var html = '';
     // 読み取った内容はその場で直してから登録できる（誤読対策）
     list.forEach(function(d, i) {
-        html += '<div class="ocr-item" data-idx="' + i + '" style="padding:8px 0;border-bottom:1px solid #C8E6C9">'
+        // AIが判定したメンバーを最初から選んでおく
+        var mem = members.find(function(m){ return d.member && m.name === d.member; });
+        var opts = mem ? memOpts.replace('value="' + esc(mem.id) + '"', 'value="' + esc(mem.id) + '" selected') : memOpts;
+        // 登録済みと思われる予定は、最初からチェックを外しておく
+        var dup = d.alreadyRegistered === true;
+        html += '<div class="ocr-item" data-idx="' + i + '" style="padding:8px 0;border-bottom:1px solid #C8E6C9' + (dup ? ';opacity:0.6' : '') + '">'
             + '<label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:13px;font-weight:700">'
-            + '<input type="checkbox" class="ocr-on" checked style="width:16px;height:16px">登録する</label>'
+            + '<input type="checkbox" class="ocr-on"' + (dup ? '' : ' checked') + ' style="width:16px;height:16px">登録する'
+            + (dup ? '<span style="font-size:11px;color:#E65100;font-weight:400">（登録済みの可能性）</span>' : '') + '</label>'
             + '<input class="ocr-title" value="' + esc(d.title || '') + '" placeholder="予定名" style="' + inp + '">'
             + '<div style="display:grid;grid-template-columns:1.4fr 1fr 1fr;gap:4px">'
             + '<input type="date" class="ocr-date" value="' + esc(d.date || '') + '" style="' + inp + '">'
             + '<input type="time" class="ocr-st" value="' + esc(d.startTime || '') + '" style="' + inp + '">'
             + '<input type="time" class="ocr-et" value="' + esc(d.endTime || '') + '" style="' + inp + '"></div>'
             + '<input class="ocr-bl" value="' + esc((d.belongings || []).join('、')) + '" placeholder="持ち物（、区切り）" style="' + inp + '">'
-            + '<select class="ocr-mem" style="' + inp + '">' + memOpts + '</select>'
+            + '<select class="ocr-mem" style="' + inp + '">' + opts + '</select>'
             + '<input class="ocr-note" value="' + esc(d.notes || '') + '" placeholder="メモ" style="' + inp + '">'
             + '</div>';
     });
